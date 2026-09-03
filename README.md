@@ -159,13 +159,39 @@ For each unique publisher name, in order:
    whose name matches (punctuation/case-insensitive). If found, it's
    reused and linked — nothing new is created.
 2. **Search id.loc.gov** (Name Authority File, corporate names only)
-   for a match. This is intentionally **conservative**: it only
-   accepts a hit if the LC authorized label matches the spreadsheet's
-   publisher name once you ignore case, whitespace, and periods/commas
-   (so "E.C. Publications" matches "E.C Publications", but "Marvel"
-   will **not** auto-match "Marvel Comics" — that kind of loose call is
-   left to you). If exactly one such match is found, a new agent is
-   created with `source: naf` and `authority_id` set to the LC URI.
+   for a match, via two lookup paths:
+   - the exact authorized-heading redirect
+     (`id.loc.gov/authorities/names/label/<name>`) — the strongest
+     signal, since it only resolves when the spreadsheet string
+     already *is* (or is a registered variant of) an authorized
+     heading;
+   - falling back to `suggest2` search, accepted only on a
+     normalized-exact, unambiguous match.
+
+   Both are intentionally **conservative**: a match is only accepted
+   once you ignore case, whitespace, and periods/commas (so "E.C.
+   Publications" matches "E.C Publications", but "Marvel" will
+   **not** auto-match "Marvel Comics" — that kind of loose call is
+   left to you). Network calls retry with backoff on timeouts and on
+   LC's own retryable errors (429/500/502/503/504), so a transient
+   hiccup doesn't get mistaken for "not in LC NAF."
+
+   If a confident match is found:
+   - If ArchivesSpace **already has an agent authorized against that
+     exact LC URI** (created from a *differently worded* spreadsheet
+     publisher string for the same real-world publisher), that
+     existing agent is reused rather than creating a duplicate
+     ArchivesSpace would reject anyway.
+   - Otherwise, a new agent is created with `source: naf` and
+     `authority_id` set to the LC URI, using the record's real
+     authorized label (fetched from the record itself, not just
+     whatever text a search result handed back).
+
+   **If the LC lookup fails at the network level** (not "no match,"
+   but "id.loc.gov couldn't be reached reliably after retries"), that
+   is logged distinctly and the publisher falls through to step 3 —
+   it is explicitly **not** treated as proof the publisher isn't in
+   LC NAF.
 3. **Otherwise, a local agent is created**, described per DACS:
 
    | Field | Value |
@@ -180,18 +206,26 @@ For each unique publisher name, in order:
    (MARC relator code for "Publisher" — let me know if you'd rather
    this be free text instead of the relator code).
 
-Every resolution decision (reused / LC match / local-created) is
-written to the run log, so you can review afterward exactly which
-publishers got authorized LC records vs. local ones.
+Every resolution decision is written to the run log with one of these
+statuses, so you can review afterward exactly what happened for each
+publisher:
+
+| Status | Meaning |
+|---|---|
+| `linked_existing` | Reused an ArchivesSpace agent already there, matched by name |
+| `linked_existing_by_authority_id` | Reused an ArchivesSpace agent already authorized against this LC URI (caught a same-publisher/different-spelling collision) |
+| `linked_loc` | Created a new agent authorized against LC NAF |
+| `created_local` | Created a local DACS agent — LC NAF was checked and confidently has no match |
+| `created_local_lc_lookup_failed` | Created a local DACS agent because the **LC lookup itself failed** (network/timeout) — **not** a confirmed absence from LC NAF. Worth a manual check or a re-run. |
 
 **id.loc.gov note:** this lookup calls a public LC web service.
-It's rate-limited by LC's own service and by nothing on our end;
-if you're processing hundreds of unique publishers you may see
-occasional lookup failures — those fail safe (fall through to local
-agent creation) rather than crashing the run, but it's worth skimming
-the log afterward for publishers that ended up "created_local" that
-you *expected* to find in LC, in case it was a transient failure
-rather than a real absence.
+Failures retry automatically, but if you're processing hundreds of
+unique publishers you may still see the occasional
+`created_local_lc_lookup_failed`. Search the log for that status
+string after a run and double check those publishers by hand (or
+just re-run with `--force` on the affected rows once the network
+issue clears — the collision guard above means re-running won't
+create duplicates even for publishers that already got a local agent).
 
 ### Top containers (boxes)
 
