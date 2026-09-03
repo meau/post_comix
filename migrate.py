@@ -35,8 +35,15 @@ import openpyxl
 
 from aspace_client import ArchivesSpaceClient, ArchivesSpaceError
 from agents import resolve_publisher_agent
+from people_agents import resolve_person_agent
+from genres import resolve_genre_term
+from digital_objects import resolve_digital_object, build_digital_object_instance
 from containers import resolve_top_container_by_indicator
-from generic_builders import build_title, build_extents, build_notes, build_dates, parse_box_value, clean_str
+from hierarchy import HierarchyWalker
+from generic_builders import (
+    build_title, build_title_and_digital_object, has_title, build_extents,
+    build_notes, build_dates, parse_box_value, clean_str,
+)
 from mapping import MappingConfig, get_value
 from resource_url import parse_resource_reference, build_resource_ref, ResourceUrlError
 from state import RunState
@@ -65,7 +72,7 @@ def load_or_init_secrets(path: str) -> dict:
     return secrets
 
 
-def read_sheet_rows(xlsx_path: str, sheet_name: str, has_header: bool):
+def read_sheet_rows(xlsx_path: str, sheet_name: str, has_header: bool, skip_rows=None):
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
     if sheet_name not in wb.sheetnames:
         print(f"Sheet {sheet_name!r} not found. Available sheets: {wb.sheetnames}")
@@ -83,7 +90,8 @@ def read_sheet_rows(xlsx_path: str, sheet_name: str, has_header: bool):
         header_index = None
         data_rows = list(enumerate(all_rows, start=1))
 
-    rows = [(n, r) for n, r in data_rows if any(c is not None for c in r)]
+    skip_rows = skip_rows or set()
+    rows = [(n, r) for n, r in data_rows if any(c is not None for c in r) and n not in skip_rows]
     return header_index, rows
 
 
@@ -107,11 +115,17 @@ def _validate_mapping_against_header(mapping: MappingConfig, header_index, sheet
 
     for field_label, cfg in (("title", mapping.title), ("publisher", mapping.publisher),
                               ("extent", mapping.extent), ("date", mapping.date),
-                              ("physdesc", mapping.physdesc), ("box", mapping.box)):
+                              ("physdesc", mapping.physdesc), ("box", mapping.box),
+                              ("genre", mapping.genre), ("title_or_digital_object", mapping.title_or_digital_object)):
         if cfg:
             check(cfg.get("column"), field_label)
     for i, cfg in enumerate(mapping.scope_notes or []):
         check(cfg.get("column"), f"scope_notes[{i}]")
+    for i, cfg in enumerate(mapping.agents or []):
+        check(cfg.get("column"), f"agents[{i}]")
+    for i, cfg in enumerate(mapping.hierarchy or []):
+        check(cfg.get("id_column"), f"hierarchy[{i}].id_column")
+        check(cfg.get("title_column"), f"hierarchy[{i}].title_column")
 
     if missing:
         actual = ", ".join(repr(h) for h in header_index if h)
@@ -125,9 +139,16 @@ def _validate_mapping_against_header(mapping: MappingConfig, header_index, sheet
 
 
 def build_archival_object(row_values, header_index, mapping: MappingConfig,
-                           resource_ref, agent_link, container_link, warnings):
-    title = build_title(row_values, header_index, mapping.title)
-    return {
+                           resource_ref, parent_ref, agent_links, genre_link,
+                           container_link, digital_object_link, warnings):
+    title, merge_url = build_title_and_digital_object(
+        row_values, header_index, mapping.title, mapping.title_or_digital_object,
+    )
+    instances = _build_instances(container_link, mapping.instance_type)
+    if digital_object_link:
+        instances.append(build_digital_object_instance(digital_object_link))
+
+    payload = {
         "jsonmodel_type": "archival_object",
         "title": title,
         "level": mapping.level,
@@ -136,9 +157,13 @@ def build_archival_object(row_values, header_index, mapping: MappingConfig,
         "dates": build_dates(row_values, header_index, mapping.date, warnings, title),
         "extents": build_extents(row_values, header_index, mapping.extent, warnings, title),
         "notes": build_notes(row_values, header_index, mapping, warnings),
-        "instances": _build_instances(container_link, mapping.instance_type),
-        "linked_agents": _build_linked_agents(agent_link),
-    }, title
+        "instances": instances,
+        "linked_agents": _build_linked_agents(agent_links),
+        "subjects": _build_subjects(genre_link),
+    }
+    if parent_ref and parent_ref != resource_ref:
+        payload["parent"] = {"ref": parent_ref}
+    return payload, title, merge_url
 
 
 def _build_instances(container_link, instance_type):
@@ -154,10 +179,19 @@ def _build_instances(container_link, instance_type):
     }]
 
 
-def _build_linked_agents(agent_link):
-    if not agent_link:
+def _build_linked_agents(agent_links):
+    """agent_links: list of (agent_link_dict_or_None, role, relator)."""
+    result = []
+    for link, role, relator in agent_links or []:
+        if link:
+            result.append({"ref": link["uri"], "role": role, "relator": relator})
+    return result
+
+
+def _build_subjects(genre_link):
+    if not genre_link:
         return []
-    return [{"ref": agent_link["uri"], "role": "creator", "relator": "pbl"}]
+    return [{"ref": genre_link["uri"]}]
 
 
 def main():
@@ -231,47 +265,86 @@ def main():
         sys.exit(1)
 
     state = RunState(args.state_file)
-    agent_cache, container_cache = {}, {}
+    agent_cache, container_cache, genre_cache, digital_object_cache = {}, {}, {}, {}
     wanted_rows = None
     if args.rows:
         wanted_rows = {int(x.strip()) for x in args.rows.split(",") if x.strip()}
 
-    succeeded, skipped, errored = 0, 0, 0
+    succeeded, skipped, errored, header_only = 0, 0, 0, 0
     all_warnings = []
 
     for sheet_name in sheets:
-        header_index, rows = read_sheet_rows(args.xlsx, sheet_name, mapping.has_header)
+        header_index, rows = read_sheet_rows(args.xlsx, sheet_name, mapping.has_header, mapping.skip_rows)
         _validate_mapping_against_header(mapping, header_index, sheet_name)
         if wanted_rows is not None:
             rows = [(n, r) for n, r in rows if n in wanted_rows]
         elif args.limit:
             rows = rows[: args.limit]
 
+        walker = HierarchyWalker(mapping.hierarchy, resource_ref, client, log) if mapping.hierarchy else None
+
         for excel_row_num, row_values in rows:
             state_key = f"{sheet_name}::{excel_row_num}"
+
+            # The hierarchy walk must run for EVERY row in order, even
+            # ones already marked successful, or a resumed run loses
+            # track of "current series" for the rows after them.
+            if walker:
+                walker.update(row_values, header_index)
+
+            if not has_title(row_values, header_index, mapping.title):
+                # A pure hierarchy-header row (e.g. a series boundary
+                # with no file-level data of its own) -- state was
+                # already updated above; nothing else to do.
+                header_only += 1
+                continue
 
             if not args.force and state.was_successful(state_key):
                 log(f"{state_key}: already succeeded previously -- skipping. (use --force to redo)")
                 skipped += 1
                 continue
 
+            parent_ref = walker.current_parent_ref() if walker else resource_ref
+
             row_warnings = []
             try:
-                publisher_raw = get_value(row_values, header_index, mapping.publisher.get("column")) if mapping.publisher else None
-                agent_link = resolve_publisher_agent(publisher_raw, client, agent_cache, log) if publisher_raw else None
+                agent_links = []
+                if mapping.publisher:
+                    pub_raw = get_value(row_values, header_index, mapping.publisher.get("column"))
+                    link = resolve_publisher_agent(pub_raw, client, agent_cache, log) if pub_raw else None
+                    agent_links.append((link, "creator", "pbl"))
+                for agent_cfg in mapping.agents:
+                    raw = get_value(row_values, header_index, agent_cfg.get("column"))
+                    if not raw:
+                        continue
+                    resolver = resolve_person_agent if agent_cfg.get("agent_type") == "person" else resolve_publisher_agent
+                    link = resolver(raw, client, agent_cache, log)
+                    agent_links.append((link, agent_cfg.get("role", "creator"), agent_cfg.get("relator")))
+
+                genre_link = None
+                if mapping.genre:
+                    genre_raw = get_value(row_values, header_index, mapping.genre.get("column"))
+                    if genre_raw:
+                        genre_link = resolve_genre_term(genre_raw, client, genre_cache, log, mapping.vocabulary_ref)
 
                 container_link = None
                 if mapping.box:
                     box_raw = get_value(row_values, header_index, mapping.box.get("column"))
-                    indicator, barcode = parse_box_value(box_raw, mapping.box)
+                    indicator, barcode, container_type = parse_box_value(box_raw, mapping.box)
                     if indicator:
                         container_link = resolve_top_container_by_indicator(
-                            indicator, client, container_cache, resource_ref, log, barcode=barcode,
+                            indicator, client, container_cache, resource_ref, log,
+                            barcode=barcode, container_type=container_type,
                         )
 
-                ao_payload, title = build_archival_object(
-                    row_values, header_index, mapping, resource_ref, agent_link, container_link, row_warnings,
+                ao_payload, title, merge_url = build_archival_object(
+                    row_values, header_index, mapping, resource_ref, parent_ref,
+                    agent_links, genre_link, container_link, None, row_warnings,
                 )
+
+                if merge_url:
+                    do_link = resolve_digital_object(merge_url, title, client, digital_object_cache, log)
+                    ao_payload["instances"].append(build_digital_object_instance(do_link))
 
                 result = client.post(f"{client.repo_prefix}/archival_objects", ao_payload)
                 ao_uri = result.get("uri")
@@ -294,6 +367,7 @@ def main():
     log("=== Summary ===")
     log(f"Succeeded: {succeeded}")
     log(f"Skipped (already done): {skipped}")
+    log(f"Header-only rows (no file-level object): {header_only}")
     log(f"Errored: {errored}")
     log(f"Total warnings: {len(all_warnings)}")
     log(f"Full log: {log_path}")

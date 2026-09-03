@@ -145,8 +145,16 @@ def _known_label_lookup(name: str):
 
 
 def suggest_corporate_names(query: str, count: int = 10) -> list:
-    """Raw suggest2 hits for a corporate-name search."""
-    params = {"q": query, "count": count, "rdftype": "CorporateName"}
+    """Raw suggest2 hits for a corporate-name search. Kept as a thin
+    wrapper for backward compatibility -- prefer suggest_names().
+    """
+    return suggest_names(query, rdftype="CorporateName", count=count)
+
+
+def suggest_names(query: str, rdftype: str = "CorporateName", count: int = 10) -> list:
+    """Raw suggest2 hits, filtered to a given LC NAF rdftype --
+    "CorporateName" or "PersonalName"."""
+    params = {"q": query, "count": count, "rdftype": rdftype}
     resp = _lc_get(SUGGEST_URL, params=params, context="LCNAF suggest")
     try:
         data = resp.json()
@@ -155,8 +163,10 @@ def suggest_corporate_names(query: str, count: int = 10) -> list:
     return data.get("hits", [])
 
 
-def find_conservative_match(publisher_name: str):
-    """Look for a single, confident LC NAF match for a corporate name.
+def find_conservative_match(name: str, rdftype: str = "CorporateName"):
+    """Look for a single, confident LC NAF match for a name.
+    rdftype is "CorporateName" (default, for publishers/organizations)
+    or "PersonalName" (for individual creators).
 
     Returns a dict {"label": <authorized label>, "uri": <id.loc.gov URI>}
     if (and only if) a normalized-exact, unambiguous match is found,
@@ -164,21 +174,21 @@ def find_conservative_match(publisher_name: str):
     LCLookupError if id.loc.gov couldn't be reached reliably via either
     lookup path (i.e. we genuinely don't know, rather than "no").
     """
-    target = normalize(publisher_name)
+    target = normalize(name)
     if not target:
         return None
 
     errors = []
 
     try:
-        known = _known_label_lookup(publisher_name)
+        known = _known_label_lookup(name)
         if known and normalize(known["label"]) == target:
             return known
     except LCLookupError as exc:
         errors.append(str(exc))
 
     try:
-        hits = suggest_corporate_names(publisher_name)
+        hits = suggest_names(name, rdftype=rdftype)
     except LCLookupError as exc:
         errors.append(str(exc))
         hits = None

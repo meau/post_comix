@@ -31,6 +31,39 @@ def build_title(row_values, header_index, title_cfg):
     return clean_str(get_value(row_values, header_index, title_cfg.get("column"))) or "[Untitled]"
 
 
+def has_title(row_values, header_index, title_cfg):
+    """Distinguishes a real file row from a pure hierarchy-header row
+    (no file-level data) when walking a hierarchical sheet -- see
+    hierarchy.py / migrate.py."""
+    if not title_cfg:
+        return False
+    return bool(clean_str(get_value(row_values, header_index, title_cfg.get("column"))))
+
+
+def build_title_and_digital_object(row_values, header_index, title_cfg, merge_cfg):
+    """Handles the "second title column is USUALLY more title text,
+    but is SOMETIMES a URL" pattern. Returns (title, url_or_None).
+    When the merge column's value looks like a URL, it is NOT folded
+    into the title -- the caller is expected to turn the URL into a
+    digital_object instance instead (see digital_objects.py).
+    """
+    from digital_objects import looks_like_url
+
+    base_title = build_title(row_values, header_index, title_cfg)
+    if not merge_cfg:
+        return base_title, None
+
+    merge_val = clean_str(get_value(row_values, header_index, merge_cfg.get("column")))
+    if not merge_val:
+        return base_title, None
+
+    if looks_like_url(merge_val):
+        return base_title, merge_val
+
+    separator = merge_cfg.get("separator", " ")
+    return f"{base_title}{separator}{merge_val}", None
+
+
 def build_extents(row_values, header_index, extent_cfg, warnings, title):
     if not extent_cfg:
         return []
@@ -116,19 +149,32 @@ def build_dates(row_values, header_index, date_cfg, warnings, title):
 
 
 def parse_box_value(raw, box_cfg):
-    """Returns (indicator, barcode) -- barcode is None unless the
-    config asks for it to be extracted. See configs/*.yaml comments
-    for the two supported shapes ("compound" vs plain).
+    """Returns (indicator, barcode, container_type) -- barcode is None
+    unless the config asks for it to be extracted.
+
+    box_cfg["placeholder"]: true bypasses the raw value entirely and
+    always returns a fixed indicator with container_type "folder" (or
+    whatever box_cfg["container_type"] says) -- for cases like "map
+    case / drawer" that are locations, not discrete countable
+    containers, and don't have a reliable per-row identifier to build
+    a real container from yet. This is deliberately a stopgap: every
+    row using this config shares the SAME placeholder container.
     """
+    container_type = box_cfg.get("container_type", "box")
+
+    if box_cfg.get("placeholder"):
+        indicator = box_cfg.get("placeholder_indicator", "TBD")
+        return indicator, None, box_cfg.get("container_type", "folder")
+
     if raw is None or str(raw).strip() == "":
-        return None, None
+        return None, None, container_type
     text = str(raw).strip()
 
     if not box_cfg.get("compound"):
         try:
-            return str(int(float(text))), None
+            return str(int(float(text))), None, container_type
         except (TypeError, ValueError):
-            return text, None
+            return text, None, container_type
 
     # Compound form, e.g. "163: Box 1" -- a leading identifier, a
     # colon, then a label that may or may not itself say "Box N".
@@ -139,9 +185,9 @@ def parse_box_value(raw, box_cfg):
         # numbers while its siblings use "N: Box M"). Try that before
         # falling back to using the raw text as-is.
         try:
-            return str(int(float(text))), None
+            return str(int(float(text))), None, container_type
         except (TypeError, ValueError):
-            return text, None
+            return text, None, container_type
     leading, label = m.group(1), m.group(2).strip()
 
     strip_prefix = box_cfg.get("strip_prefix")
@@ -164,4 +210,4 @@ def parse_box_value(raw, box_cfg):
     else:
         indicator = label or text
         barcode = leading if box_cfg.get("barcode_from_prefix") else None
-    return indicator, barcode
+    return indicator, barcode, container_type

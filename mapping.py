@@ -27,6 +27,7 @@ class MappingConfig:
         self.name = data.get("name") or path or "mapping"
         self.sheets = data.get("sheets") or []
         self.has_header = data.get("has_header", True)
+        self.skip_rows = set(data.get("skip_rows") or [])  # Excel row numbers to skip entirely (e.g. an embedded instructions row)
         self.level = data.get("level", "item")
         self.instance_type = data.get("instance_type", "mixed_materials")
         self.publish_default = data.get("publish_default", False)
@@ -38,6 +39,13 @@ class MappingConfig:
         self.physdesc = data.get("physdesc")
         self.box = data.get("box")
         self.scope_notes = data.get("scope_notes") or []
+
+        # Pass 2 additions:
+        self.agents = data.get("agents") or []          # [{column, agent_type: corporate|person, role, relator}]
+        self.hierarchy = data.get("hierarchy") or []     # [{level, id_column, title_column}]
+        self.genre = data.get("genre")                  # {column}  -- reconciled against Getty AAT
+        self.title_or_digital_object = data.get("title_or_digital_object")  # {column, separator}
+        self.vocabulary_ref = data.get("vocabulary_ref", "/vocabularies/1")
 
     @classmethod
     def load(cls, path: str) -> "MappingConfig":

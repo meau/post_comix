@@ -83,21 +83,22 @@ def resolve_top_container(box_number, client, container_cache: dict, resource_re
 
 
 def resolve_top_container_by_indicator(indicator: str, client, container_cache: dict,
-                                        resource_ref: str, log, barcode: str = None) -> dict:
+                                        resource_ref: str, log, barcode: str = None,
+                                        container_type: str = "box") -> dict:
     """Same resolution logic as resolve_top_container, but takes an
-    already-computed indicator (and optional barcode) directly --
-    for callers (like the generalized migrate.py) whose spreadsheet
-    box values need config-driven parsing before they're a plain
-    indicator string. See generic_builders.parse_box_value.
+    already-computed indicator (and optional barcode/container_type)
+    directly -- for callers (like the generalized migrate.py) whose
+    spreadsheet box values need config-driven parsing before they're
+    a plain indicator string. See generic_builders.parse_box_value.
     """
     if indicator is None or str(indicator).strip() == "":
         return None
     indicator = str(indicator).strip()
 
-    # Cache key includes the resource, so the same indicator in a
-    # different resource (should this script ever be pointed at more
-    # than one in a session) is never conflated.
-    cache_key = (resource_ref, indicator)
+    # Cache key includes the resource AND type, so a placeholder
+    # "folder" container never collides with a real "box" that
+    # happens to share the same indicator text.
+    cache_key = (resource_ref, container_type, indicator)
 
     if cache_key in container_cache:
         result = dict(container_cache[cache_key])
@@ -115,7 +116,7 @@ def resolve_top_container_by_indicator(indicator: str, client, container_cache: 
     payload = {
         "jsonmodel_type": "top_container",
         "indicator": indicator,
-        "type": "box",
+        "type": container_type,
     }
     if barcode:
         payload["barcode"] = str(barcode)
