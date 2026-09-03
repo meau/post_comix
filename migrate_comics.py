@@ -178,14 +178,16 @@ def build_dates(row, warnings, title):
     if parsed is None:
         warnings.append(f'Title "{title}": could not parse date {raw!r} -- date subrecord skipped.')
         return []
-    return [{
+    date_record = {
         "jsonmodel_type": "date",
         "label": "creation",
         "date_type": parsed.date_type,
         "expression": parsed.expression,
         "begin": parsed.begin,
-        "end": parsed.end,
-    }]
+    }
+    if parsed.end:
+        date_record["end"] = parsed.end
+    return [date_record]
 
 
 def build_instances(container_link):
@@ -324,7 +326,9 @@ def main():
         row_warnings = []
         try:
             agent_link = resolve_publisher_agent(row.get("Publisher"), client, agent_cache, log)
-            container_link = resolve_top_container(row.get("New Box Number"), client, container_cache, log)
+            container_link = resolve_top_container(
+                row.get("New Box Number"), client, container_cache, resource_ref, log
+            )
 
             ao_payload = build_archival_object(
                 row, resource_ref, agent_link, container_link, row_warnings,

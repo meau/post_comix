@@ -2,10 +2,12 @@
 date_parser.py
 
 Parses the "Human readable dates updated final" column into:
-  - expression: "YYYY Month D" / "YYYY Month" / "YYYY" (single) or two of those
-                joined by " - " (range)
-  - begin: YYYY-MM-DD
-  - end:   YYYY-MM-DD
+  - expression: "YYYY Month D" / "YYYY Month" / "YYYY" (single) or two of
+                those joined by " - " (range)
+  - begin: an ISO8601 date at whatever precision is known --
+           "YYYY", "YYYY-MM", or "YYYY-MM-DD"
+  - end:   same precision rules, but only present for actual RANGES.
+           A single date (whatever its precision) has no end at all.
   - date_type: "single" or "inclusive" (ArchivesSpace date_type enum values)
 
 Design notes / assumptions (see README for the full list):
@@ -21,7 +23,6 @@ Design notes / assumptions (see README for the full list):
     is responsible for logging the row and skipping the date subrecord.
 """
 
-import calendar
 import datetime
 import re
 from dataclasses import dataclass
@@ -70,8 +71,8 @@ class ParsedDatePart:
 class ParsedDate:
     expression: str
     begin: str
-    end: str
     date_type: str  # "single" or "inclusive"
+    end: Optional[str] = None  # only set for date_type == "inclusive"
 
 
 def _expr_for_part(part: ParsedDatePart) -> str:
@@ -82,23 +83,14 @@ def _expr_for_part(part: ParsedDatePart) -> str:
     return f"{part.year}"
 
 
-def _begin_for_part(part: ParsedDatePart) -> str:
-    month = part.month or 1
-    day = part.day or 1
-    return f"{part.year:04d}-{month:02d}-{day:02d}"
-
-
-def _end_for_part(part: ParsedDatePart) -> str:
+def _iso_for_part(part: ParsedDatePart) -> str:
+    """Format at whatever precision is actually known -- no padding out
+    to a fake day-of-month or month-of-year."""
     if part.day:
-        month = part.month
-        day = part.day
-    elif part.month:
-        month = part.month
-        day = calendar.monthrange(part.year, part.month)[1]
-    else:
-        month = 12
-        day = 31
-    return f"{part.year:04d}-{month:02d}-{day:02d}"
+        return f"{part.year:04d}-{part.month:02d}-{part.day:02d}"
+    if part.month:
+        return f"{part.year:04d}-{part.month:02d}"
+    return f"{part.year:04d}"
 
 
 def _parse_part(text: str) -> Optional[ParsedDatePart]:
@@ -107,13 +99,12 @@ def _parse_part(text: str) -> Optional[ParsedDatePart]:
     if not text:
         return None
 
-    lower = text.lower()
     year_match = YEAR_RE.search(text)
     year = int(year_match.group(0)) if year_match else None
 
     # Season word => year-only precision, per instruction to "just use
     # the year range" rather than guessing a month.
-    words = re.findall(r"[a-zA-Z]+", lower)
+    words = re.findall(r"[a-zA-Z]+", text.lower())
     if any(w in SEASONS for w in words):
         return ParsedDatePart(year=year, month=None, day=None, season_only=True)
 
@@ -171,8 +162,7 @@ def parse_date_string(raw: str) -> Optional[ParsedDate]:
             return None
         return ParsedDate(
             expression=_expr_for_part(part),
-            begin=_begin_for_part(part),
-            end=_end_for_part(part),
+            begin=_iso_for_part(part),
             date_type="single",
         )
 
@@ -197,15 +187,14 @@ def parse_date_string(raw: str) -> Optional[ParsedDate]:
     if left_expr == right_expr:
         return ParsedDate(
             expression=left_expr,
-            begin=_begin_for_part(left),
-            end=_end_for_part(left),
+            begin=_iso_for_part(left),
             date_type="single",
         )
 
     return ParsedDate(
         expression=f"{left_expr} - {right_expr}",
-        begin=_begin_for_part(left),
-        end=_end_for_part(right),
+        begin=_iso_for_part(left),
+        end=_iso_for_part(right),
         date_type="inclusive",
     )
 
@@ -226,8 +215,7 @@ def parse_date_cell(value) -> Optional[ParsedDate]:
             part = ParsedDatePart(year=year, month=month, day=day)
         return ParsedDate(
             expression=_expr_for_part(part),
-            begin=_begin_for_part(part),
-            end=_end_for_part(part),
+            begin=_iso_for_part(part),
             date_type="single",
         )
 
@@ -236,8 +224,7 @@ def parse_date_cell(value) -> Optional[ParsedDate]:
         part = ParsedDatePart(year=year)
         return ParsedDate(
             expression=_expr_for_part(part),
-            begin=_begin_for_part(part),
-            end=_end_for_part(part),
+            begin=_iso_for_part(part),
             date_type="single",
         )
 

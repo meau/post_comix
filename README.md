@@ -111,7 +111,18 @@ specify (no intermediate series). Level is set to `item`.
 ### Date parsing
 
 Per your spec, dates are normalized to a `"YYYY Month D"` / `"YYYY Month"`
-/ `"YYYY"` expression, with `begin`/`end` always populated as `YYYY-MM-DD`.
+/ `"YYYY"` expression, with `begin` (and `end`, for ranges) formatted at
+**whatever precision is actually known** — `YYYY`, `YYYY-MM`, or
+`YYYY-MM-DD` — never padded out to a fake day-of-month or month-of-year.
+A single (non-range) date only gets a `begin`; no `end` is added.
+
+| Input | expression | begin | end | date_type |
+|---|---|---|---|---|
+| `1999` | `1999` | `1999` | — | single |
+| Excel date `5/1/1991` (day=1) | `1991 May` | `1991-05` | — | single |
+| Excel date `5/14/1991` | `1991 May 14` | `1991-05-14` | — | single |
+| `April 1992 - July 1992` | `1992 April - 1992 July` | `1992-04` | `1992-07` | inclusive |
+| `1973-1975` | `1973 - 1975` | `1973` | `1975` | inclusive |
 
 Rules used:
 
@@ -119,12 +130,12 @@ Rules used:
   the 1st, it's treated as **month precision** (`"1991 May"`) since a
   day-of-1 is almost always Excel's placeholder rather than a real
   reported day. A day other than the 1st is kept as exact-day precision.
-- **Bare years** (`2007`) → year precision (`begin`/`end` = Jan 1 /
-  Dec 31 of that year).
+- **Bare years** (`2007`) → year precision, `begin: "2007"`, no `end`.
 - **Text ranges** (`"April 1992 - July 1992"`, `"Apr - Aug 1999"`,
   `"1973-1975"`) → parsed into two sides; if only one side has a year,
   the other side borrows it (e.g. `"Apr - Aug 1999"` → April 1999 –
-  August 1999). `date_type` is set to `inclusive`.
+  August 1999). `date_type` is set to `inclusive`, and `begin`/`end`
+  are each formatted at their own side's precision.
 - **Seasons** (`"Fall 1991 - Spring 1993"`, `"Winter 1988"`) → per your
   instruction, these collapse to **year-only** precision — no month is
   guessed from the season word.
@@ -185,9 +196,26 @@ rather than a real absence.
 ### Top containers (boxes)
 
 Box numbers in the Comics sheet (1–13) are checked against existing
-ArchivesSpace top containers first (by indicator, within your target
-repository) and reused if found; otherwise a new one is created with
-`type: box` and no barcode.
+ArchivesSpace top containers first, scoped to **the target resource**
+(not just the repository) — so if some other collection in the same
+repository already has its own box "1", this script will never link
+to it. Only a box already linked to *this* resource is reused;
+otherwise a new one is created with `type: box` and no barcode.
+
+This resource-scoping relies on ArchivesSpace's search index exposing
+which resource(s) a top container is linked to, via a facet field
+(`collection_uri_u_sstr`). This is the same mechanism the staff UI
+uses for its own "containers linked to this resource" filtering, but
+field names can vary slightly across ArchivesSpace versions/plugins.
+The script fails safe: if that filtered search doesn't confirm a
+match, it **creates a new container** rather than risk reusing the
+wrong one — so double check the `logs/run-*.log` output after your
+`--dry-run` to make sure boxes are being reused for repeat rows the
+way you expect (you should see the same box's indicator show up as
+`"reused_this_run"` or `"reused_existing"` on later rows, not
+`"created"` again every time). If you see boxes being needlessly
+re-created, let me know and I'll adjust the field name for your
+instance's search index.
 
 ## Assumptions worth double-checking
 
