@@ -114,6 +114,10 @@ Per your spec, dates are normalized to a `"YYYY Month D"` / `"YYYY Month"`
 / `"YYYY"` expression, with `begin` (and `end`, for ranges) formatted at
 **whatever precision is actually known** — `YYYY`, `YYYY-MM`, or
 `YYYY-MM-DD` — never padded out to a fake day-of-month or month-of-year.
+The date's `label` is set to `publication` (not the more common
+`creation`) since DACS 2.4.3 specifically calls out publication dates
+as the appropriate choice when describing published items like these,
+and `publication` is a standard value in ArchivesSpace's date-label list.
 A single (non-range) date only gets a `begin`; no `end` is added.
 
 | Input | expression | begin | end | date_type |

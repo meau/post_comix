@@ -180,7 +180,7 @@ def build_dates(row, warnings, title):
         return []
     date_record = {
         "jsonmodel_type": "date",
-        "label": "creation",
+        "label": "publication",
         "date_type": parsed.date_type,
         "expression": parsed.expression,
         "begin": parsed.begin,
