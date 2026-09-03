@@ -148,6 +148,19 @@ def build_dates(row_values, header_index, date_cfg, warnings, title):
     return [date_record]
 
 
+def get_box_barcode_from_column(row_values, header_index, box_cfg):
+    """Some templates store the container's barcode in its own column
+    (shared identically across every row of the same box), rather than
+    embedded in the box value itself. Only meaningful at container
+    CREATION time -- resolve_top_container_by_indicator ignores the
+    barcode argument when reusing an existing container, so this never
+    overwrites a barcode already on record.
+    """
+    if not box_cfg or not box_cfg.get("barcode_column"):
+        return None
+    return clean_str(get_value(row_values, header_index, box_cfg["barcode_column"]))
+
+
 def parse_box_value(raw, box_cfg):
     """Returns (indicator, barcode, container_type) -- barcode is None
     unless the config asks for it to be extracted.

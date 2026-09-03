@@ -38,6 +38,7 @@ class MappingConfig:
         self.date = data.get("date")
         self.physdesc = data.get("physdesc")
         self.box = data.get("box")
+        self.ignore_column = data.get("ignore_column")  # {column} -- any non-blank value skips the row entirely
         self.scope_notes = data.get("scope_notes") or []
 
         # Pass 2 additions:

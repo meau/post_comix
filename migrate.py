@@ -42,7 +42,7 @@ from containers import resolve_top_container_by_indicator
 from hierarchy import HierarchyWalker
 from generic_builders import (
     build_title, build_title_and_digital_object, has_title, build_extents,
-    build_notes, build_dates, parse_box_value, clean_str,
+    build_notes, build_dates, parse_box_value, get_box_barcode_from_column, clean_str,
 )
 from mapping import MappingConfig, get_value
 from resource_url import parse_resource_reference, build_resource_ref, ResourceUrlError
@@ -116,9 +116,12 @@ def _validate_mapping_against_header(mapping: MappingConfig, header_index, sheet
     for field_label, cfg in (("title", mapping.title), ("publisher", mapping.publisher),
                               ("extent", mapping.extent), ("date", mapping.date),
                               ("physdesc", mapping.physdesc), ("box", mapping.box),
-                              ("genre", mapping.genre), ("title_or_digital_object", mapping.title_or_digital_object)):
+                              ("genre", mapping.genre), ("title_or_digital_object", mapping.title_or_digital_object),
+                              ("ignore_column", mapping.ignore_column)):
         if cfg:
             check(cfg.get("column"), field_label)
+    if mapping.box and mapping.box.get("barcode_column"):
+        check(mapping.box.get("barcode_column"), "box.barcode_column")
     for i, cfg in enumerate(mapping.scope_notes or []):
         check(cfg.get("column"), f"scope_notes[{i}]")
     for i, cfg in enumerate(mapping.agents or []):
@@ -292,6 +295,12 @@ def main():
             if walker:
                 walker.update(row_values, header_index)
 
+            if mapping.ignore_column:
+                ignore_raw = get_value(row_values, header_index, mapping.ignore_column.get("column"))
+                if clean_str(ignore_raw):
+                    log(f"{state_key}: 'Ignore' column set ({ignore_raw!r}) -- skipping row entirely.")
+                    continue
+
             if not has_title(row_values, header_index, mapping.title):
                 # A pure hierarchy-header row (e.g. a series boundary
                 # with no file-level data of its own) -- state was
@@ -331,6 +340,7 @@ def main():
                 if mapping.box:
                     box_raw = get_value(row_values, header_index, mapping.box.get("column"))
                     indicator, barcode, container_type = parse_box_value(box_raw, mapping.box)
+                    barcode = barcode or get_box_barcode_from_column(row_values, header_index, mapping.box)
                     if indicator:
                         container_link = resolve_top_container_by_indicator(
                             indicator, client, container_cache, resource_ref, log,
