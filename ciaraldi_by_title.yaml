@@ -1,0 +1,93 @@
+# DRAFT -- one config for the ~15 "one sheet per title" tabs (Capt.
+# America, Wizard, What If..., Web of Spider-Man, Superman, Iron Man,
+# Incredible Hulk, G.I. Joe, Flash, Fantastic Four, Detective Comics,
+# David Anthony Krafts Comics Int, Daredevil, Conan the Barbarian,
+# CatWoman).
+#
+# IMPORTANT: these sheets do NOT all use identical header text --
+# "Wizard" has "Start Date" / "Total issues" where the others have
+# "Starting Date" / "Total Issues". The column ORDER is identical
+# across all of them though, so this config uses positional
+# column_index (0-based) instead of header names, which sidesteps
+# the mismatch entirely. migrate.py hard-errors before writing
+# anything if a sheet's shape doesn't match what a name-based column
+# expects -- it does NOT silently skip mismatched columns.
+#
+# OPEN QUESTIONS -- do not run this for real until these are settled
+# (see chat for detail):
+#   1. No Publisher column exists on these sheets -- publisher is
+#      left unmapped, so no agent gets linked for any row from this
+#      config. Confirm that's what you want.
+#   2. `Box` values are compound, e.g. "163: Box 1". The leading
+#      number climbs steadily and uniquely across EVERY sheet (163,
+#      164, 165 ... 1099, 1100 ... 980, 981 ... 506, 507 ...) while
+#      the "Box N" part after the colon resets to 1 on every title
+#      and repeats across titles -- e.g. Capt. America's "Box 1" and
+#      Iron Man's "Box 1" are almost certainly two different physical
+#      boxes. This config therefore uses the LEADING NUMBER as the
+#      real top_container indicator (indicator_source:
+#      leading_number below), not the "Box N" label. Please confirm
+#      this reading is correct -- if the leading number is actually
+#      some other kind of ID (e.g. an old accession or barcode
+#      number, not a box), this needs to change.
+#      One sheet (Wizard) doesn't use the compound format at all --
+#      just bare numbers (1, 2, 3...) that do NOT continue any of the
+#      other sheets' numbering. Those get used as-is; whether that's
+#      really the same box-numbering scheme as everyone else's is
+#      worth a second look.
+#      G.I. Joe row 1 is "21: Comics Ach-Adn" -- not a "Box N" label
+#      at all, but what looks like a shelf/location range. Using "21"
+#      as its indicator is consistent with the rule above, but
+#      confirm that's the right box/location record to link to.
+#   3. Continuation rows for the same title often leave "Starting
+#      Date" blank (only the first box of a run is dated). As
+#      written, those rows get no date subrecord -- they do NOT
+#      inherit the date from the row above. Confirm that's right.
+
+name: "ciaraldi_by_title (DRAFT)"
+sheets:
+  - "Capt. America"
+  - "Wizard"
+  - "What If..."
+  - "Web of Spider-Man"
+  - "Superman"
+  - "Iron Man"
+  - "Incredible Hulk"
+  - "G.I. Joe"
+  - "Flash"
+  - "Fantastic Four"
+  - "Detective Comics"
+  - "David Anthony Krafts Comics Int"
+  - "Daredevil"
+  - "Conan the Barbarian"
+  - "CatWoman"
+has_header: true
+level: item
+instance_type: mixed_materials
+publish_default: false
+
+title:
+  column: 0        # "Title" / "Title"
+
+publisher: null    # no Publisher column on these sheets -- see open question 1
+
+extent:
+  column: 4         # "Total Issues" / "Total issues"
+  extent_type: items
+
+date:
+  column: 2         # "Starting Date" / "Start Date"
+  label: publication
+
+box:
+  column: 3                        # "Box"
+  compound: true
+  strip_prefix: "Box "
+  indicator_source: leading_number # see open question 2
+  label_as_barcode: false          # set true to store "Box N" as the container's barcode instead of discarding it
+
+scope_notes:
+  - column: 1       # "Run" -- the issue-range listing, same role as Peck's "Listing of Issues Held"
+    prefix: "Includes "
+    ensure_trailing_period: true
+  - column: 5       # "Notes"

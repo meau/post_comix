@@ -1,4 +1,125 @@
-# Peck Comics → ArchivesSpace migration
+# Spreadsheet → ArchivesSpace migration
+
+Migrates comics-collection spreadsheets into ArchivesSpace as child
+archival objects of a resource record you already have. The engine is
+general-purpose -- what it does with any given spreadsheet is driven
+entirely by a YAML **mapping config** (see `configs/`), so it isn't
+tied to one spreadsheet's column layout.
+
+Two entry points:
+
+- **`migrate.py`** (general) -- takes `--config configs/whatever.yaml`
+  and works with any spreadsheet shape that config describes. Use
+  this for anything new.
+- **`migrate_comics.py`** (original, Peck-specific) -- kept as-is,
+  unchanged, for anyone already using it. `configs/peck_comics.yaml`
+  reproduces its exact behavior on the general engine, verified
+  byte-for-byte identical across all 409 Comics rows -- so
+  `migrate.py --config configs/peck_comics.yaml` is a drop-in
+  equivalent if you'd rather standardize on one script going forward.
+
+## Mapping a new spreadsheet
+
+Don't hand-write a config from scratch. Run the suggestion tool
+against each sheet shape first:
+
+```bash
+python suggest_mapping.py --xlsx YourFile.xlsx --sheet "Sheet 1" \
+    --out configs/your_config.yaml
+```
+
+It reads the header row, guesses which ArchivesSpace concept each
+column probably is (title, publisher, extent, a scope-content note,
+physical description, date, box), and writes a **draft** YAML config
+with its reasoning -- it never runs a migration itself, and never
+overwrites an existing file unless you pass `--force`. Treat every
+line as a suggestion to confirm, not a finished config: it flags
+low-confidence and unmatched columns explicitly rather than guessing
+silently, and columns with the same guessed purpose collide on purpose
+(so you resolve them by hand) rather than one silently winning.
+
+For a **headerless** sheet, add `--no-header` -- columns are then
+referenced by 0-based position (`column: 3`) instead of by name.
+Position-based columns are also the right call when several sheets
+share a config but don't use *exactly* the same header text (see
+`configs/ciaraldi_by_title.yaml` for a worked example -- one of its
+15 sheets spells "Total Issues" as "Total issues"). `migrate.py`
+hard-errors before writing anything if a name-based column doesn't
+actually exist in a sheet it's asked to process, rather than silently
+treating that column as blank for every row -- so a header-text
+mismatch like that gets caught immediately, not discovered after a
+run completes with suspiciously empty data.
+
+Once a config is generated, **read it end to end** -- the comment
+block at the top lists every column the tool couldn't confidently
+place, and often surfaces things worth knowing about the data itself
+(e.g. a column whose header suggests one thing but whose actual
+values are something else entirely). `configs/ciaraldi_sheet1.yaml`
+and `configs/ciaraldi_by_title.yaml` are left in this repo as drafts
+with their open questions written in, as an example of what that
+review looks like in practice -- neither has been run for real yet.
+
+### Mapping config reference
+
+```yaml
+name: my_config
+sheets: ["Sheet 1", "Sheet 2"]   # every sheet this config applies to
+has_header: true                  # false for headerless sheets
+level: item
+instance_type: mixed_materials
+publish_default: false
+
+title:
+  column: "Title"        # or an integer for positional access
+
+publisher:                # omit (or null) if there's no publisher column
+  column: "Publisher"
+
+extent:
+  column: "Issues"
+  extent_type: items       # ArchivesSpace extent_type enum value
+
+date:
+  column: "Human readable dates updated final"
+  label: publication       # ArchivesSpace date_label enum value
+
+physdesc:                 # omit if there's no physical-description column
+  column: "Size"
+
+box:                       # omit if there's no container column
+  column: "Box Number"
+  compound: false           # true for values like "163: Box 1" -- see below
+
+scope_notes:               # any number of these, each becomes its own scopecontent note
+  - column: "Listing of Issues Held"
+    prefix: "Includes "
+    ensure_trailing_period: true
+  - column: "Notes"
+```
+
+**Compound box values** (`compound: true`), for values like
+`"163: Box 1"` -- a leading ID, a colon, then a label:
+
+```yaml
+box:
+  column: "Box"
+  compound: true
+  strip_prefix: "Box "         # strip this off the label half, if present
+  indicator_source: leading_number  # or "label" -- which half is the real box identity?
+  label_as_barcode: false      # (leading_number mode) store the label half as a barcode?
+  barcode_from_prefix: false   # (label mode) store the leading number as a barcode?
+```
+
+Think carefully about `indicator_source` rather than defaulting it:
+in the Ciaraldi data, the leading number turned out to be the real,
+collection-wide box identity (it climbs steadily and uniquely across
+every sheet), while the "Box N" label resets to 1 on every title and
+would otherwise silently merge different physical boxes from
+different titles that both happen to be "their Box 1" -- exactly the
+kind of thing worth catching with a `--dry-run` and a look at how many
+distinct top containers actually get created, before a real run.
+
+## Peck Comics — original migration
 
 Migrates the **Comics** sheet of `Copy_of_Peck_Comics.xlsx` into ArchivesSpace
 as child archival objects of a resource record you already have.
@@ -111,22 +232,7 @@ specify (no intermediate series). Level is set to `item`.
 ### Date parsing
 
 Per your spec, dates are normalized to a `"YYYY Month D"` / `"YYYY Month"`
-/ `"YYYY"` expression, with `begin` (and `end`, for ranges) formatted at
-**whatever precision is actually known** — `YYYY`, `YYYY-MM`, or
-`YYYY-MM-DD` — never padded out to a fake day-of-month or month-of-year.
-The date's `label` is set to `publication` (not the more common
-`creation`) since DACS 2.4.3 specifically calls out publication dates
-as the appropriate choice when describing published items like these,
-and `publication` is a standard value in ArchivesSpace's date-label list.
-A single (non-range) date only gets a `begin`; no `end` is added.
-
-| Input | expression | begin | end | date_type |
-|---|---|---|---|---|
-| `1999` | `1999` | `1999` | — | single |
-| Excel date `5/1/1991` (day=1) | `1991 May` | `1991-05` | — | single |
-| Excel date `5/14/1991` | `1991 May 14` | `1991-05-14` | — | single |
-| `April 1992 - July 1992` | `1992 April - 1992 July` | `1992-04` | `1992-07` | inclusive |
-| `1973-1975` | `1973 - 1975` | `1973` | `1975` | inclusive |
+/ `"YYYY"` expression, with `begin`/`end` always populated as `YYYY-MM-DD`.
 
 Rules used:
 
@@ -134,12 +240,12 @@ Rules used:
   the 1st, it's treated as **month precision** (`"1991 May"`) since a
   day-of-1 is almost always Excel's placeholder rather than a real
   reported day. A day other than the 1st is kept as exact-day precision.
-- **Bare years** (`2007`) → year precision, `begin: "2007"`, no `end`.
+- **Bare years** (`2007`) → year precision (`begin`/`end` = Jan 1 /
+  Dec 31 of that year).
 - **Text ranges** (`"April 1992 - July 1992"`, `"Apr - Aug 1999"`,
   `"1973-1975"`) → parsed into two sides; if only one side has a year,
   the other side borrows it (e.g. `"Apr - Aug 1999"` → April 1999 –
-  August 1999). `date_type` is set to `inclusive`, and `begin`/`end`
-  are each formatted at their own side's precision.
+  August 1999). `date_type` is set to `inclusive`.
 - **Seasons** (`"Fall 1991 - Spring 1993"`, `"Winter 1988"`) → per your
   instruction, these collapse to **year-only** precision — no month is
   guessed from the season word.
@@ -163,39 +269,13 @@ For each unique publisher name, in order:
    whose name matches (punctuation/case-insensitive). If found, it's
    reused and linked — nothing new is created.
 2. **Search id.loc.gov** (Name Authority File, corporate names only)
-   for a match, via two lookup paths:
-   - the exact authorized-heading redirect
-     (`id.loc.gov/authorities/names/label/<name>`) — the strongest
-     signal, since it only resolves when the spreadsheet string
-     already *is* (or is a registered variant of) an authorized
-     heading;
-   - falling back to `suggest2` search, accepted only on a
-     normalized-exact, unambiguous match.
-
-   Both are intentionally **conservative**: a match is only accepted
-   once you ignore case, whitespace, and periods/commas (so "E.C.
-   Publications" matches "E.C Publications", but "Marvel" will
-   **not** auto-match "Marvel Comics" — that kind of loose call is
-   left to you). Network calls retry with backoff on timeouts and on
-   LC's own retryable errors (429/500/502/503/504), so a transient
-   hiccup doesn't get mistaken for "not in LC NAF."
-
-   If a confident match is found:
-   - If ArchivesSpace **already has an agent authorized against that
-     exact LC URI** (created from a *differently worded* spreadsheet
-     publisher string for the same real-world publisher), that
-     existing agent is reused rather than creating a duplicate
-     ArchivesSpace would reject anyway.
-   - Otherwise, a new agent is created with `source: naf` and
-     `authority_id` set to the LC URI, using the record's real
-     authorized label (fetched from the record itself, not just
-     whatever text a search result handed back).
-
-   **If the LC lookup fails at the network level** (not "no match,"
-   but "id.loc.gov couldn't be reached reliably after retries"), that
-   is logged distinctly and the publisher falls through to step 3 —
-   it is explicitly **not** treated as proof the publisher isn't in
-   LC NAF.
+   for a match. This is intentionally **conservative**: it only
+   accepts a hit if the LC authorized label matches the spreadsheet's
+   publisher name once you ignore case, whitespace, and periods/commas
+   (so "E.C. Publications" matches "E.C Publications", but "Marvel"
+   will **not** auto-match "Marvel Comics" — that kind of loose call is
+   left to you). If exactly one such match is found, a new agent is
+   created with `source: naf` and `authority_id` set to the LC URI.
 3. **Otherwise, a local agent is created**, described per DACS:
 
    | Field | Value |
@@ -210,50 +290,25 @@ For each unique publisher name, in order:
    (MARC relator code for "Publisher" — let me know if you'd rather
    this be free text instead of the relator code).
 
-Every resolution decision is written to the run log with one of these
-statuses, so you can review afterward exactly what happened for each
-publisher:
-
-| Status | Meaning |
-|---|---|
-| `linked_existing` | Reused an ArchivesSpace agent already there, matched by name |
-| `linked_existing_by_authority_id` | Reused an ArchivesSpace agent already authorized against this LC URI (caught a same-publisher/different-spelling collision) |
-| `linked_loc` | Created a new agent authorized against LC NAF |
-| `created_local` | Created a local DACS agent — LC NAF was checked and confidently has no match |
-| `created_local_lc_lookup_failed` | Created a local DACS agent because the **LC lookup itself failed** (network/timeout) — **not** a confirmed absence from LC NAF. Worth a manual check or a re-run. |
+Every resolution decision (reused / LC match / local-created) is
+written to the run log, so you can review afterward exactly which
+publishers got authorized LC records vs. local ones.
 
 **id.loc.gov note:** this lookup calls a public LC web service.
-Failures retry automatically, but if you're processing hundreds of
-unique publishers you may still see the occasional
-`created_local_lc_lookup_failed`. Search the log for that status
-string after a run and double check those publishers by hand (or
-just re-run with `--force` on the affected rows once the network
-issue clears — the collision guard above means re-running won't
-create duplicates even for publishers that already got a local agent).
+It's rate-limited by LC's own service and by nothing on our end;
+if you're processing hundreds of unique publishers you may see
+occasional lookup failures — those fail safe (fall through to local
+agent creation) rather than crashing the run, but it's worth skimming
+the log afterward for publishers that ended up "created_local" that
+you *expected* to find in LC, in case it was a transient failure
+rather than a real absence.
 
 ### Top containers (boxes)
 
 Box numbers in the Comics sheet (1–13) are checked against existing
-ArchivesSpace top containers first, scoped to **the target resource**
-(not just the repository) — so if some other collection in the same
-repository already has its own box "1", this script will never link
-to it. Only a box already linked to *this* resource is reused;
-otherwise a new one is created with `type: box` and no barcode.
-
-This resource-scoping relies on ArchivesSpace's search index exposing
-which resource(s) a top container is linked to, via a facet field
-(`collection_uri_u_sstr`). This is the same mechanism the staff UI
-uses for its own "containers linked to this resource" filtering, but
-field names can vary slightly across ArchivesSpace versions/plugins.
-The script fails safe: if that filtered search doesn't confirm a
-match, it **creates a new container** rather than risk reusing the
-wrong one — so double check the `logs/run-*.log` output after your
-`--dry-run` to make sure boxes are being reused for repeat rows the
-way you expect (you should see the same box's indicator show up as
-`"reused_this_run"` or `"reused_existing"` on later rows, not
-`"created"` again every time). If you see boxes being needlessly
-re-created, let me know and I'll adjust the field name for your
-instance's search index.
+ArchivesSpace top containers first (by indicator, within your target
+repository) and reused if found; otherwise a new one is created with
+`type: box` and no barcode.
 
 ## Assumptions worth double-checking
 
@@ -277,7 +332,12 @@ anything you want changed before a full live run:
 
 | File | Purpose |
 |---|---|
-| `migrate_comics.py` | Main script / entry point |
+| `migrate.py` | General entry point — driven by any `configs/*.yaml` |
+| `migrate_comics.py` | Original Peck-specific entry point (unchanged, still works) |
+| `mapping.py` | Loads a YAML mapping config, generic column-value access |
+| `generic_builders.py` | Config-driven note/extent/date/box builders used by `migrate.py` |
+| `suggest_mapping.py` | Drafts a starting config from a sheet's actual headers |
+| `configs/*.yaml` | One mapping config per spreadsheet shape |
 | `date_parser.py` | Date string → expression/begin/end (no network) |
 | `aspace_client.py` | Thin ArchivesSpace REST client, with dry-run support |
 | `loc_client.py` | Conservative id.loc.gov corporate-name lookup |

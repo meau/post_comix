@@ -77,6 +77,23 @@ def resolve_top_container(box_number, client, container_cache: dict, resource_re
     except (TypeError, ValueError):
         indicator = str(box_number).strip()
 
+    return resolve_top_container_by_indicator(
+        indicator, client, container_cache, resource_ref, log
+    )
+
+
+def resolve_top_container_by_indicator(indicator: str, client, container_cache: dict,
+                                        resource_ref: str, log, barcode: str = None) -> dict:
+    """Same resolution logic as resolve_top_container, but takes an
+    already-computed indicator (and optional barcode) directly --
+    for callers (like the generalized migrate.py) whose spreadsheet
+    box values need config-driven parsing before they're a plain
+    indicator string. See generic_builders.parse_box_value.
+    """
+    if indicator is None or str(indicator).strip() == "":
+        return None
+    indicator = str(indicator).strip()
+
     # Cache key includes the resource, so the same indicator in a
     # different resource (should this script ever be pointed at more
     # than one in a session) is never conflated.
@@ -100,9 +117,12 @@ def resolve_top_container(box_number, client, container_cache: dict, resource_re
         "indicator": indicator,
         "type": "box",
     }
+    if barcode:
+        payload["barcode"] = str(barcode)
     created = client.post(f"{client.repo_prefix}/top_containers", payload)
     uri = created.get("uri")
     result = {"uri": uri, "status": "created"}
-    log(f'Box "{indicator}": created new top container {uri}')
+    log(f'Box "{indicator}": created new top container {uri}'
+        + (f' (barcode {barcode})' if barcode else ''))
     container_cache[cache_key] = result
     return result

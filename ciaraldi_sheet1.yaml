@@ -1,0 +1,68 @@
+# DRAFT -- "Sheet 1" of Ciaraldi_Standard_Size.xlsx (8,758 rows). This
+# sheet uses essentially the same schema as Peck Comics' "Comics" tab
+# (compare to configs/peck_comics.yaml), with a few extra columns.
+#
+# OPEN QUESTIONS -- do not run this for real until these are settled
+# (see chat for detail):
+#   1. `Format` is mapped to physdesc below, but every single row has
+#      the same value, "Regular ". That's not necessarily wrong (it
+#      may matter if this collection is ever compared against an
+#      "Oversize" set catalogued elsewhere), but it adds a physdesc
+#      note that says "Regular" 8,758 times over. Confirm you want
+#      that, or set physdesc to null to skip it.
+#   2. The `Donor` column is left unmapped -- it's blank for 8,753 of
+#      8,758 rows, and the 5 non-blank values aren't donor
+#      information at all: "mature content", "NEED TO BE SLEEVED;
+#      OVERSIZE", "337, 338 missing", "don't know which numbers are
+#      in which box?" x2. These read like ad hoc processing/QC notes
+#      that ended up in the wrong column, not a real field to map.
+#      Worth deciding by hand what (if anything) to do with those 5
+#      rows rather than mapping the column wholesale.
+#   3. `Box Number` is numeric for 8,754 rows but a plain string for
+#      4 rows, and those 4 are NOT simple box labels -- e.g.
+#      " 372- 373" (spans two boxes), and one cell containing an
+#      entire embedded 3-box breakdown across newlines. The current
+#      `compound: false` setting will pass those 4 strings through
+#      as literal top_container indicators verbatim, which is
+#      certainly wrong for at least the multi-box ones. These 4 rows
+#      need manual handling (splitting into separate rows, most
+#      likely) before a real run.
+#   4. `Collection` (always "Ciaraldi ") is left unmapped as pure
+#      noise -- confirm there's nothing else to do with it.
+
+name: "ciaraldi_sheet1 (DRAFT)"
+sheets: ["Sheet 1"]
+has_header: true
+level: item
+instance_type: mixed_materials
+publish_default: false
+
+title:
+  column: "Title"
+
+publisher:
+  column: "Publisher"
+
+extent:
+  column: "Issues"
+  extent_type: items
+
+date:
+  # NOT "Dates original" -- that's the pre-cleanup column (1,722 of
+  # 8,758 rows differ between the two, e.g. "1990?" -> "1990"), same
+  # relationship as Peck's spreadsheet had. This is the cleaned one.
+  column: "Human readable dates updated final"
+  label: publication
+
+physdesc:
+  column: "Format"    # see open question 1
+
+box:
+  column: "Box Number"
+  compound: false     # see open question 3
+
+scope_notes:
+  - column: "Listing of Issues Held"
+    prefix: "Includes "
+    ensure_trailing_period: true
+  - column: "Notes"

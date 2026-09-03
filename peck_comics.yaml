@@ -1,0 +1,38 @@
+# Reproduces the original Peck Comics migrate_comics.py mapping exactly,
+# on the generalized engine (migrate.py). This is the known-good,
+# fully-reviewed config -- see README.md for the full field-by-field
+# rationale.
+
+name: peck_comics
+sheets: ["Comics"]
+has_header: true
+level: item
+instance_type: mixed_materials
+publish_default: false
+
+title:
+  column: "Title"
+
+publisher:
+  column: "Publisher"
+
+extent:
+  column: "Issues"
+  extent_type: items
+
+date:
+  column: "Human readable dates updated final"
+  label: publication
+
+physdesc:
+  column: "Size"
+
+box:
+  column: "New Box Number"
+  compound: false
+
+scope_notes:
+  - column: "Listing of Issues Held"
+    prefix: "Includes "
+    ensure_trailing_period: true
+  - column: "Notes"
