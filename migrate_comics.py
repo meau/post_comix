@@ -299,7 +299,7 @@ def main():
         log(f"Could not connect/log in to ArchivesSpace: {exc}")
         sys.exit(1)
 
-    state = RunState(args.state_file)
+    state = RunState(args.state_file, dry_run=args.dry_run)
     rows = read_rows(args.xlsx, args.sheet)
 
     if args.rows:

@@ -295,7 +295,7 @@ def main():
         log(f"Could not connect/log in to ArchivesSpace: {exc}")
         sys.exit(1)
 
-    state = RunState(args.state_file)
+    state = RunState(args.state_file, log=log, dry_run=args.dry_run)
     agent_cache, container_cache, genre_cache, digital_object_cache, location_cache = {}, {}, {}, {}, {}
     missing_locations = {}
     pending_relink = []
