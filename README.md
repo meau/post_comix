@@ -82,7 +82,7 @@ what it writes, which lists everything it couldn't confidently place.
 
 For a headerless sheet, add `--no-header`.
 
-Once you have a draft, see **[docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md)**
+Once you have a draft, see **[CONFIG_REFERENCE.md](CONFIG_REFERENCE.md)**
 for the complete field-by-field reference — every option, with
 examples. `configs/ciaraldi_sheet1.yaml` and `configs/ciaraldi_by_title.yaml`
 are left in this repo as real worked examples of a draft with its
@@ -143,30 +143,30 @@ python create_resource.py --xlsx YourFile.xlsx
 
 Checks whether a matching resource already exists first (never
 creates a duplicate or updates one in place), and refuses to create
-an incomplete one — see **[docs/HIERARCHY_AND_RESOURCES.md](docs/HIERARCHY_AND_RESOURCES.md)**
+an incomplete one — see **[HIERARCHY_AND_RESOURCES.md](HIERARCHY_AND_RESOURCES.md)**
 for exactly what it checks and how. On success it prints the new
 resource's URI, ready to paste into `migrate.py`'s resource prompt.
 
 ## Further reading
 
-- **[docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md)** — every
+- **[CONFIG_REFERENCE.md](CONFIG_REFERENCE.md)** — every
   mapping config field, with examples.
-- **[docs/ENUMERATIONS.md](docs/ENUMERATIONS.md)** — what values are
+- **[ENUMERATIONS.md](ENUMERATIONS.md)** — what values are
   actually valid inside fields like `extent_type`, `role`, `relator`,
   `level`. Run `list_enumerations.py` for the live, authoritative
   list from your own instance (these are staff-editable per
   institution, so the doc is a starting point, not ground truth).
-- **[docs/RECONCILIATION.md](docs/RECONCILIATION.md)** — how
+- **[RECONCILIATION.md](RECONCILIATION.md)** — how
   publisher/person-agent and Getty AAT genre-term resolution work:
   the reuse → external-match → local-fallback pattern, and what
   every status string in the log means.
-- **[docs/HIERARCHY_AND_RESOURCES.md](docs/HIERARCHY_AND_RESOURCES.md)**
+- **[HIERARCHY_AND_RESOURCES.md](HIERARCHY_AND_RESOURCES.md)**
   — series/subseries hierarchy walking, and the resource-creation
   workflow.
-- **[docs/LOCATIONS.md](docs/LOCATIONS.md)** — matching shelf
+- **[LOCATIONS.md](LOCATIONS.md)** — matching shelf
   coordinates against real ArchivesSpace `Location` records, and the
   export/re-link workflow for ones that don't exist yet.
-- **[docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md)** — every
+- **[KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md)** — every
   honest gap and unverified assumption in one place. Read this before
   assuming something "just works" on a new spreadsheet shape.
 
