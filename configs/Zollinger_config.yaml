@@ -1,0 +1,26 @@
+name: DRAFT -- Comics
+sheets:
+- Comics
+has_header: true
+level: file
+instance_type: mixed_materials
+publish_default: true
+title:
+  column: Title
+publisher:
+  column: Publisher
+extent:
+  column: Issues
+  extent_type: items
+date:
+  column: Human readable dates updated final
+  label: publication
+physdesc:
+  column: Format
+  column: Size
+box:
+  column: New Box Number
+  compound: false
+scope_notes:
+- column: Listing of Issues Held
+- column: Notes

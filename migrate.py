@@ -40,6 +40,8 @@ from genres import resolve_genre_term
 from digital_objects import resolve_digital_object, build_digital_object_instance
 from containers import resolve_top_container_by_indicator
 from hierarchy import HierarchyWalker
+from locations import resolve_location, build_container_locations
+from missing_locations import record_miss, write_missing_locations_report, write_pending_relink, coordinates_to_jsonable
 from generic_builders import (
     build_title, build_title_and_digital_object, has_title, build_extents,
     build_notes, build_dates, parse_box_value, get_box_barcode_from_column, clean_str,
@@ -122,6 +124,11 @@ def _validate_mapping_against_header(mapping: MappingConfig, header_index, sheet
             check(cfg.get("column"), field_label)
     if mapping.box and mapping.box.get("barcode_column"):
         check(mapping.box.get("barcode_column"), "box.barcode_column")
+    if mapping.location:
+        for level in (1, 2, 3):
+            level_cfg = mapping.location.get(f"coordinate_{level}")
+            if level_cfg:
+                check(level_cfg.get("column"), f"location.coordinate_{level}")
     for i, cfg in enumerate(mapping.scope_notes or []):
         check(cfg.get("column"), f"scope_notes[{i}]")
     for i, cfg in enumerate(mapping.agents or []):
@@ -197,6 +204,25 @@ def _build_subjects(genre_link):
     return [{"ref": genre_link["uri"]}]
 
 
+def _build_coordinates(row_values, header_index, location_cfg):
+    if not location_cfg:
+        return {}
+    coords = {}
+    for level in (1, 2, 3):
+        level_cfg = location_cfg.get(f"coordinate_{level}")
+        if not level_cfg:
+            continue
+        raw = get_value(row_values, header_index, level_cfg.get("column"))
+        if raw is None or str(raw).strip() == "":
+            continue
+        try:
+            val = str(int(float(raw)))
+        except (TypeError, ValueError):
+            val = str(raw).strip()
+        coords[level] = (level_cfg.get("label", f"Coordinate {level}"), val)
+    return coords
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", required=True, help="Path to a mapping YAML config.")
@@ -212,6 +238,8 @@ def main():
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--state-file", default="state.json")
     parser.add_argument("--log-dir", default="logs")
+    parser.add_argument("--pending-relink-file", default="pending_relink.json",
+                         help="Where to accumulate top containers created without a location match, for relink_locations.py.")
     parser.add_argument("--publish", action="store_true",
                          help="Override the config's publish_default to True.")
     args = parser.parse_args()
@@ -268,7 +296,9 @@ def main():
         sys.exit(1)
 
     state = RunState(args.state_file)
-    agent_cache, container_cache, genre_cache, digital_object_cache = {}, {}, {}, {}
+    agent_cache, container_cache, genre_cache, digital_object_cache, location_cache = {}, {}, {}, {}, {}
+    missing_locations = {}
+    pending_relink = []
     wanted_rows = None
     if args.rows:
         wanted_rows = {int(x.strip()) for x in args.rows.split(",") if x.strip()}
@@ -341,11 +371,31 @@ def main():
                     box_raw = get_value(row_values, header_index, mapping.box.get("column"))
                     indicator, barcode, container_type = parse_box_value(box_raw, mapping.box)
                     barcode = barcode or get_box_barcode_from_column(row_values, header_index, mapping.box)
+
+                    container_locations_payload = None
+                    coords = _build_coordinates(row_values, header_index, mapping.location)
+                    building = mapping.location.get("building") if mapping.location else None
+                    location_link = None
+                    if coords:
+                        location_link = resolve_location(coords, building, client, location_cache, log)
+                        if location_link:
+                            container_locations_payload = build_container_locations(location_link)
+
                     if indicator:
                         container_link = resolve_top_container_by_indicator(
                             indicator, client, container_cache, resource_ref, log,
                             barcode=barcode, container_type=container_type,
+                            container_locations=container_locations_payload,
                         )
+                        if coords and not location_link:
+                            title_guess = build_title(row_values, header_index, mapping.title)
+                            record_miss(missing_locations, coords, building, title_guess)
+                            if container_link and container_link["status"] == "created":
+                                pending_relink.append({
+                                    "top_container_uri": container_link["uri"],
+                                    "building": building,
+                                    "coordinates": coordinates_to_jsonable(coords),
+                                })
 
                 ao_payload, title, merge_url = build_archival_object(
                     row_values, header_index, mapping, resource_ref, parent_ref,
@@ -384,6 +434,19 @@ def main():
     log(f"State file: {args.state_file}")
     if errored:
         log("Re-run the same command to retry only the errored/unprocessed rows.")
+
+    if missing_locations:
+        report_path = os.path.join(args.log_dir, f"missing-locations-{timestamp}.xlsx")
+        write_missing_locations_report(missing_locations, report_path)
+        log(f"Missing locations report: {report_path} "
+            f"({len(missing_locations)} distinct location(s) not found in ArchivesSpace)")
+    if pending_relink:
+        relink_path = args.pending_relink_file
+        write_pending_relink(pending_relink, relink_path)
+        log(f"Pending relink file: {relink_path} "
+            f"({len(pending_relink)} top container(s) created without a location link)")
+        log("Once the missing locations are created in ArchivesSpace, run relink_locations.py "
+            f"--pending-relink-file {relink_path} to attach them.")
 
     log_file.close()
 

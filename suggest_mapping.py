@@ -172,6 +172,10 @@ def main():
         f"# Delete this comment block once you've reviewed the config.\n\n"
     )
 
+    out_dir = os.path.dirname(args.out)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(header_comment)
         yaml.safe_dump(draft, f, sort_keys=False, allow_unicode=True)

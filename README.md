@@ -12,6 +12,7 @@ so it isn't tied to any one spreadsheet's column layout.
 | Map a new spreadsheet's columns for the first time | `suggest_mapping.py` — drafts a starting config from the header row |
 | Migrate spreadsheet rows into an **existing** resource | `migrate.py --config configs/whatever.yaml` |
 | Create the **resource record itself** from a `Collection-Level Data` sheet, if it doesn't already exist | `create_resource.py` |
+| Attach real ArchivesSpace `Location` records once staff have created ones a migration run couldn't find | `relink_locations.py` |
 | Migrate the original Peck Comics file specifically | `migrate_comics.py` (unchanged original), or `migrate.py --config configs/peck_comics.yaml` (verified identical, gets ongoing engine fixes) |
 
 ## Setup
@@ -33,11 +34,37 @@ Edit `secrets.json`:
 ```
 
 - `api_url` is the ArchivesSpace **backend/API** URL (not the staff or
-  public front end) — it usually ends in `:8089`.
+  public front end) — it usually ends in `:8089`, or is a plain
+  `https://...` URL for a hosted instance (e.g. Atlas-hosted).
 - If you run any script without a `secrets.json` present, it creates
   the template above for you and stops, so you can fill it in.
 
 `secrets.json` is not encrypted — keep it out of version control.
+
+### Starting against a test instance
+
+Always point `api_url` at the **test/sandbox** instance first, never
+production — this project has no built-in safeguard against that,
+it's entirely on `secrets.json` pointing the right place.
+
+If your API account is provisioned **read-only by default** (a
+common, sensible institutional default — write access granted only
+once actually needed, then revoked when the project's done): `--dry-run`
+still works fully either way, since it never sends a POST regardless
+of what the account can do. A real (non-dry-run) run attempting an
+actual create will fail with a permissions error until write access
+is granted on that account. That's expected, not a bug in this
+codebase — check with whoever administers your instance before your
+first real run.
+
+Also worth knowing before a first run against an institutional
+instance: some networks require being on a specific VPN, restrict API
+access to an IP allowlist, and/or require IPv4 to be forced (IPv6
+traffic silently blocked by some CDN/WAF setups in front of the API)
+— `aspace_client.py` forces IPv4 resolution for exactly this reason.
+If your first connection attempt hangs or fails, check your
+institution's own API access documentation for network requirements
+like these before assuming this codebase is broken.
 
 ## Mapping a new spreadsheet
 
@@ -124,6 +151,11 @@ resource's URI, ready to paste into `migrate.py`'s resource prompt.
 
 - **[docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md)** — every
   mapping config field, with examples.
+- **[docs/ENUMERATIONS.md](docs/ENUMERATIONS.md)** — what values are
+  actually valid inside fields like `extent_type`, `role`, `relator`,
+  `level`. Run `list_enumerations.py` for the live, authoritative
+  list from your own instance (these are staff-editable per
+  institution, so the doc is a starting point, not ground truth).
 - **[docs/RECONCILIATION.md](docs/RECONCILIATION.md)** — how
   publisher/person-agent and Getty AAT genre-term resolution work:
   the reuse → external-match → local-fallback pattern, and what
@@ -131,6 +163,9 @@ resource's URI, ready to paste into `migrate.py`'s resource prompt.
 - **[docs/HIERARCHY_AND_RESOURCES.md](docs/HIERARCHY_AND_RESOURCES.md)**
   — series/subseries hierarchy walking, and the resource-creation
   workflow.
+- **[docs/LOCATIONS.md](docs/LOCATIONS.md)** — matching shelf
+  coordinates against real ArchivesSpace `Location` records, and the
+  export/re-link workflow for ones that don't exist yet.
 - **[docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md)** — every
   honest gap and unverified assumption in one place. Read this before
   assuming something "just works" on a new spreadsheet shape.
@@ -142,11 +177,15 @@ resource's URI, ready to paste into `migrate.py`'s resource prompt.
 | `migrate.py` | General entry point — driven by any `configs/*.yaml` |
 | `migrate_comics.py` | Original Peck-specific entry point (unchanged, frozen — see Known Limitations) |
 | `create_resource.py` | Creates a resource record from a `Collection-Level Data` sheet |
+| `relink_locations.py` | Attaches ArchivesSpace `Location` records once created, for containers migrate.py couldn't match |
 | `suggest_mapping.py` | Drafts a starting config from a sheet's actual headers |
+| `list_enumerations.py` | Prints your instance's actual controlled value lists (extent types, roles, relators, etc.) |
 | `mapping.py` | Loads a YAML mapping config, generic column-value access |
 | `generic_builders.py` | Config-driven note/extent/date/box/title builders |
 | `resource_builder.py` | Collection-Level Data → resource payload |
 | `hierarchy.py` | Series/subseries walking for hierarchical sheets |
+| `locations.py` | Shelf coordinates → ArchivesSpace Location matching (search only, never creates) |
+| `missing_locations.py` | Missing-location spreadsheet export + pending-relink tracking |
 | `agents.py` | Corporate agent (publisher) resolution |
 | `people_agents.py` | Personal agent (individual creator) resolution |
 | `genres.py` | Genre/form term resolution (Getty AAT) |

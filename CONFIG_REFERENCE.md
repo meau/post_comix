@@ -5,6 +5,11 @@ config, used by `migrate.py`. Don't hand-write one from scratch —
 run `suggest_mapping.py` against your sheet first (see the main
 [README](../README.md)) and edit its draft output.
 
+This doc covers which **fields** exist. For what **values** are
+actually valid inside fields like `extent_type`, `role`, `relator`,
+or `level`, see [ENUMERATIONS.md](ENUMERATIONS.md) — and, for the
+authoritative live answer for your own instance, `list_enumerations.py`.
+
 Every field below is optional unless marked **required** — omit
 (or set to `null`) anything your spreadsheet doesn't have. A blank
 cell for any mapped field is always just skipped (no empty
@@ -203,6 +208,21 @@ box:
 This is a deliberate stopgap — every row sharing this config gets
 the *same* placeholder container, not a real per-location one. See
 `KNOWN_LIMITATIONS.md` for the fuller reasoning.
+
+## `location`
+
+Matches shelf coordinates against real ArchivesSpace `Location`
+records (never auto-created — see
+[LOCATIONS.md](LOCATIONS.md) for the full search/match/defer/re-link
+workflow this drives).
+
+```yaml
+location:
+  building: "John Hay Library"
+  coordinate_1: {column: "Range", label: "Range"}
+  coordinate_2: {column: "Bay", label: "Bay"}
+  coordinate_3: {column: "Shelf", label: "Shelf"}
+```
 
 ## `ignore_column`
 

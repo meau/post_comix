@@ -34,6 +34,13 @@ codes). A few were **not** independently confirmed the same way:
   parent via search, verified by fetching each candidate and checking
   its actual `parent` ref. Confirm this on a small `--dry-run` batch
   before a full run on a new instance.
+- **Location matching** (`locations.py`) searches on the most specific
+  coordinate present, then verifies every candidate by fetching it and
+  comparing all coordinate fields directly — so a search-index quirk
+  would show up as a false "not found" (safe: deferred to the
+  missing-locations report) rather than a wrong match. Still worth
+  confirming on a small batch, same as the other search-then-verify
+  features here.
 
 ## Date parsing
 
@@ -53,14 +60,19 @@ codes). A few were **not** independently confirmed the same way:
 
 ## Containers and locations
 
-- **"Map case / drawer" placeholder containers are a deliberate
-  stopgap, not real location modeling.** `box.placeholder: true`
+- **Real `Location` record matching exists** (`locations.py`,
+  `missing_locations.py`, `relink_locations.py`) — see
+  `LOCATIONS.md` for the full workflow. It never auto-creates a
+  Location; unmatched coordinates are deferred to a spreadsheet for
+  staff review and a later re-link pass.
+- **"Map case / drawer" placeholder containers are a separate,
+  deliberate stopgap, not location modeling.** `box.placeholder: true`
   creates one shared `folder`-type top container for every row using
-  that config — it does not create ArchivesSpace `Location` records
-  (building/room/coordinate fields) or represent the map case/drawer
-  distinction at all. If real per-location tracking is needed later,
-  this needs a proper `Location`-record-based rebuild, not just a
-  config tweak.
+  that config — it does not search or create `Location` records at
+  all, and doesn't represent the map case/drawer distinction in any
+  structured way. If a spreadsheet's shelf data is reliable enough to
+  search/match (like the Range/Bay/Shelf scheme locations.py was
+  built for), use `location:` instead of this.
 - **True two-level containers (e.g. box-within-a-case, or a folder
   sub-container inside a box) aren't implemented.** Some source
   templates have a second shelf-locator column pair

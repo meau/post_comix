@@ -84,12 +84,20 @@ def resolve_top_container(box_number, client, container_cache: dict, resource_re
 
 def resolve_top_container_by_indicator(indicator: str, client, container_cache: dict,
                                         resource_ref: str, log, barcode: str = None,
-                                        container_type: str = "box") -> dict:
+                                        container_type: str = "box", container_locations: list = None) -> dict:
     """Same resolution logic as resolve_top_container, but takes an
-    already-computed indicator (and optional barcode/container_type)
-    directly -- for callers (like the generalized migrate.py) whose
-    spreadsheet box values need config-driven parsing before they're
-    a plain indicator string. See generic_builders.parse_box_value.
+    already-computed indicator (and optional barcode/container_type/
+    container_locations) directly -- for callers (like the
+    generalized migrate.py) whose spreadsheet box values need
+    config-driven parsing before they're a plain indicator string.
+    See generic_builders.parse_box_value.
+
+    container_locations (if given) is only ever applied when a NEW
+    container is being created -- an already-existing, reused
+    container's location is never touched here. Returns "created" in
+    status either way so the caller can tell whether the location was
+    actually attached (i.e. only check container_locations was used
+    when status == "created").
     """
     if indicator is None or str(indicator).strip() == "":
         return None
@@ -120,10 +128,13 @@ def resolve_top_container_by_indicator(indicator: str, client, container_cache: 
     }
     if barcode:
         payload["barcode"] = str(barcode)
+    if container_locations:
+        payload["container_locations"] = container_locations
     created = client.post(f"{client.repo_prefix}/top_containers", payload)
     uri = created.get("uri")
-    result = {"uri": uri, "status": "created"}
+    result = {"uri": uri, "status": "created", "location_attached": bool(container_locations)}
     log(f'Box "{indicator}": created new top container {uri}'
-        + (f' (barcode {barcode})' if barcode else ''))
+        + (f' (barcode {barcode})' if barcode else '')
+        + (' (location attached)' if container_locations else ''))
     container_cache[cache_key] = result
     return result

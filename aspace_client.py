@@ -9,12 +9,32 @@ a realistic preview of what already exists -- e.g. which agents/top
 containers would be reused vs. created), but POST/PUT calls are
 intercepted, logged, and answered with a fake placeholder URI so the
 rest of the script can keep running as if the create had succeeded.
+
+Brown-specific note (from JHL-ArchivesSpace_API-Instructions_notes.pdf):
+even while on the Brown VPN, IPv6 traffic to the API gets blocked by
+Atlas' Cloudflare, and Python's default DNS resolution can pick IPv6
+first. This module forces IPv4 resolution for all requests made
+through it, per that document's own recommended fix, so this doesn't
+surface as a confusing connection failure on first run.
 """
 
 import itertools
+import socket
 import sys
 
 import requests
+
+# === FORCE IPv4 TRAFFIC (BLOCK IPv6) ===
+# Per Brown's own API notes: required even on VPN, or requests can
+# silently hang/fail against Atlas' Cloudflare-fronted API.
+_orig_getaddrinfo = socket.getaddrinfo
+
+
+def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+
+socket.getaddrinfo = _ipv4_getaddrinfo
 
 
 class ArchivesSpaceError(Exception):
