@@ -1,0 +1,22 @@
+# Secrets -- never commit real credentials
+secrets.json
+secrets_test.json
+*.secrets.json
+
+# Run-generated artifacts -- local bookkeeping, not source
+state.json
+pending_relink.json
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+
+# OS cruft
+.DS_Store
+Thumbs.db
