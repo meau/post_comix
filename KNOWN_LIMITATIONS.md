@@ -83,11 +83,13 @@ codes). A few were **not** independently confirmed the same way:
 
 ## Date parsing
 
-- **Day-level ranges within a single month aren't parsed** — e.g.
-  `"1998 March 8-11"` or `"1978 May 12-14"`. These get logged as a
-  warning and the archival object is still created, just without a
-  `dates` subrecord. Found in Brown's publications data; not yet
-  fixed.
+- **Day-level ranges within a single month** (`"1998 March 8-11"`,
+  `"1978 May 12-14"`) are now parsed — `date_type: inclusive`, with
+  `begin`/`end` at full day precision. Deliberately scoped to a
+  single shared month/year on both sides — a range spanning a month
+  boundary (`"March 30 - April 2"`) is NOT handled, since no real
+  data seen so far has needed it, and folding that case in risked
+  misparsing genuine month-to-month ranges.
 - Season words (`Winter`, `Spring`, `Summer`, `Fall`) collapse to
   year-only precision, by explicit decision — no month is guessed
   from a season.
@@ -151,13 +153,6 @@ codes). A few were **not** independently confirmed the same way:
   limitation of the redirect endpoint itself.
 
 ## Not yet generalized
-
-- `migrate_comics.py` (the original, Peck-specific script) is frozen
-  as-is and does **not** get any of the newer capabilities (hierarchy,
-  multiple agents, genre reconciliation, digital objects,
-  `ignore_column`, `barcode_column`) — it only ever does what it did
-  originally. `configs/peck_comics.yaml` on `migrate.py` is the
-  actively-maintained equivalent going forward.
 - `resource_builder.py`'s field vocabulary is specific to the Brown
   template family seen so far. A different institution's
   collection-level template with different field names would need

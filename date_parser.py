@@ -120,6 +120,58 @@ def _parse_part(text: str) -> Optional[ParsedDatePart]:
     return ParsedDatePart(year=year, month=month, day=None)
 
 
+# "1998 March 8-11" or "March 8-11, 1998" -- a day-day range within a
+# SINGLE month. Deliberately scoped to this one shape (year and month
+# shared by both days) -- a range spanning a month boundary (e.g.
+# "March 30 - April 2") is NOT handled here; no real data seen so far
+# has needed that, and conflating the two would risk misparsing a
+# genuine month-to-month range (already handled by _split_range) as a
+# same-month one. Checked BEFORE _split_range, since the generic
+# hyphen-splitter would otherwise slice "8-11" into two nonsense
+# fragments ("...March 8" and "11") rather than recognizing it as one
+# day-day pair.
+DAY_RANGE_RE = re.compile(
+    r"^(?:(?P<year1>1[5-9]\d{2}|20\d{2})\s+)?"
+    r"(?P<month>[A-Za-z]+)\.?\s+"
+    r"(?P<day1>\d{1,2})\s*-\s*(?P<day2>\d{1,2})"
+    r"(?:,?\s*(?P<year2>1[5-9]\d{2}|20\d{2}))?$"
+)
+
+
+def _parse_day_range(text: str) -> Optional["ParsedDate"]:
+    m = DAY_RANGE_RE.match(text.strip())
+    if not m:
+        return None
+
+    month_word = m.group("month").lower()
+    if month_word not in MONTHS:
+        return None
+    month = MONTHS[month_word]
+
+    year_text = m.group("year1") or m.group("year2")
+    if not year_text:
+        return None
+    year = int(year_text)
+
+    day1, day2 = int(m.group("day1")), int(m.group("day2"))
+    if not (1 <= day1 <= 31 and 1 <= day2 <= 31):
+        return None
+    if day2 < day1:
+        # Doesn't look like a real day range (e.g. could be something
+        # else entirely) -- let it fall through to the normal parsing
+        # path instead of guessing.
+        return None
+
+    left = ParsedDatePart(year=year, month=month, day=day1)
+    right = ParsedDatePart(year=year, month=month, day=day2)
+    return ParsedDate(
+        expression=f"{_expr_for_part(left)}-{day2}",
+        begin=_iso_for_part(left),
+        end=_iso_for_part(right),
+        date_type="inclusive",
+    )
+
+
 def _split_range(text: str):
     """Try to split a string into two date parts around a range dash.
     Handles both '"A" - "B"' and '"A"-"B"' (no surrounding spaces),
@@ -153,6 +205,10 @@ def parse_date_string(raw: str) -> Optional[ParsedDate]:
     # together (e.g. "Mar-Oct1993" -> "Mar-Oct 1993") so the year regex
     # (which requires a word boundary) can find the year.
     text = re.sub(r"(?<=[A-Za-z])(?=\d)", " ", text)
+
+    day_range = _parse_day_range(text)
+    if day_range:
+        return day_range
 
     split = _split_range(text)
 
@@ -191,8 +247,21 @@ def parse_date_string(raw: str) -> Optional[ParsedDate]:
             date_type="single",
         )
 
+    # Same year on both sides, and both have at least month precision:
+    # don't repeat the year -- "1989 October - December" rather than
+    # "1989 October - 1989 December". begin/end (below) still get the
+    # full, unambiguous ISO value on each side regardless; only the
+    # human-readable expression is shortened.
+    if left.year == right.year and left.month and right.month:
+        right_short = MONTH_NAMES[right.month]
+        if right.day:
+            right_short += f" {right.day}"
+        combined_expr = f"{left_expr} - {right_short}"
+    else:
+        combined_expr = f"{left_expr} - {right_expr}"
+
     return ParsedDate(
-        expression=f"{left_expr} - {right_expr}",
+        expression=combined_expr,
         begin=_iso_for_part(left),
         end=_iso_for_part(right),
         date_type="inclusive",

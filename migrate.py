@@ -2,7 +2,7 @@
 """
 migrate.py
 
-Generalized version of migrate_comics.py: migrates one or more sheets
+Migrates one or more sheets
 into ArchivesSpace as child archival objects of a resource, driven
 entirely by a YAML mapping config (see mapping.py, configs/*.yaml,
 and suggest_mapping.py for how to build one).
@@ -16,9 +16,8 @@ Usage examples:
   python migrate.py --config configs/ciaraldi_by_title.yaml --xlsx Ciaraldi_Standard_Size.xlsx \
       --sheets "Wizard,Flash" --dry-run
 
-See README.md for the full flag list -- they're unchanged from
-migrate_comics.py (--dry-run, --limit, --rows, --force, --publish,
---resource, --secrets, --state-file, --log-dir).
+See README.md for the full flag list (--dry-run, --limit, --rows,
+--force, --publish, --resource, --secrets, --state-file, --log-dir).
 
 Row identity across MULTIPLE sheets: state.json keys are
 "<sheet>::<excel row number>" rather than a bare row number, so

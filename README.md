@@ -13,7 +13,7 @@ so it isn't tied to any one spreadsheet's column layout.
 | Migrate spreadsheet rows into an **existing** resource | `migrate.py --config configs/whatever.yaml` |
 | Create the **resource record itself** from a `Collection-Level Data` sheet, if it doesn't already exist | `create_resource.py` |
 | Attach real ArchivesSpace `Location` records once staff have created ones a migration run couldn't find | `relink_locations.py` |
-| Migrate the original Peck Comics file specifically | `migrate_comics.py` (unchanged original), or `migrate.py --config configs/peck_comics.yaml` (verified identical, gets ongoing engine fixes) |
+| Migrate the original Peck Comics file specifically | `migrate.py --config configs/peck_comics.yaml` |
 
 ## Setup
 
@@ -90,9 +90,9 @@ open questions written in.
 
 ## Running a migration
 
-Both `migrate.py` and `migrate_comics.py` prompt for (or accept via
-`--resource`) the target **resource** — paste any form of the URL/ID
-(staff URL, public URL, raw API URI, or just the bare number).
+`migrate.py` prompts for (or accepts via `--resource`) the target
+**resource or archival object** — paste any form of the URL/ID (staff
+URL, public URL, raw API URI, or just the bare number for a resource).
 
 **1. Preview before touching anything:**
 ```bash
@@ -177,7 +177,6 @@ resource's URI, ready to paste into `migrate.py`'s resource prompt.
 | File | Purpose |
 |---|---|
 | `migrate.py` | General entry point — driven by any `configs/*.yaml` |
-| `migrate_comics.py` | Original Peck-specific entry point (unchanged, frozen — see Known Limitations) |
 | `create_resource.py` | Creates a resource record from a `Collection-Level Data` sheet |
 | `relink_locations.py` | Attaches ArchivesSpace `Location` records once created, for containers migrate.py couldn't match |
 | `suggest_mapping.py` | Drafts a starting config from a sheet's actual headers |
