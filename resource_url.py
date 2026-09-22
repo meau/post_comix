@@ -15,6 +15,13 @@ Examples all resolve to resource_id="123":
   https://example.org:8089/repositories/2/resources/123     (raw API)
   /repositories/2/resources/123
   123
+
+parse_target_reference() additionally recognizes archival object
+references, including the staff UI's tree-view URL shape where the
+path still says "resources" but the fragment names the actual
+selected node:
+  https://staff.example.org/repositories/2/archival_objects/396287
+  https://staff.example.org/resources/1187/edit#tree::archival_object_396287
 """
 
 import re
@@ -66,8 +73,17 @@ def parse_target_reference(text: str):
 
     A bare number (no URL) is assumed to be a RESOURCE id, matching
     parse_resource_reference's prior behavior -- to target an
-    archival object, paste its actual URL (staff, public, or API),
-    which unambiguously contains "/archival_objects/".
+    archival object, paste its actual URL (staff, public, or API).
+
+    The staff UI's tree view uses URLs shaped like
+    ".../resources/1187/edit#tree::archival_object_396287" -- the
+    PATH says "resources/1187" (just the page you're on) but the
+    FRAGMENT after "#tree::" names the actual node selected in the
+    tree, which is what the person means to target. That fragment is
+    checked FIRST, before the plain path-based patterns, specifically
+    so a resource-edit-view URL whose fragment points at a specific
+    archival object is correctly read as targeting that object, not
+    the resource the path happens to mention.
     """
     text = text.strip()
     if not text:
@@ -78,6 +94,16 @@ def parse_target_reference(text: str):
 
     repo_match = re.search(r"/repositories/(\d+)", text)
     repository_id = repo_match.group(1) if repo_match else None
+
+    # Tree-view fragment, e.g. "#tree::archival_object_396287" or
+    # "#tree::resource_1187" -- takes priority over a path match.
+    tree_ao_match = re.search(r"tree::archival_object_(\d+)", text)
+    if tree_ao_match:
+        return "archival_object", tree_ao_match.group(1), repository_id
+
+    tree_resource_match = re.search(r"tree::resource_(\d+)", text)
+    if tree_resource_match:
+        return "resource", tree_resource_match.group(1), repository_id
 
     ao_match = re.search(r"/archival_objects/(\d+)", text)
     if ao_match:
