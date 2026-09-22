@@ -41,11 +41,25 @@ codes). A few were **not** independently confirmed the same way:
   on a search-index facet field (`collection_uri_u_sstr`) to confirm
   a candidate top container is already linked to the *specific*
   resource being migrated into, not just sharing an indicator
-  elsewhere in the repository. If your ArchivesSpace instance indexes
-  this differently, the search comes back empty and the code falls
-  back to **creating** a new container rather than risking a wrong
-  reuse — so it fails safe, but check the `--dry-run` log for boxes
-  you expect to be reused showing up as `"created"` instead.
+  elsewhere in the repository. **Confirmed broken on at least one real
+  instance**: the field didn't match, so every search came back empty
+  and every re-run recreated every container from scratch, even
+  within the same resource. It still fails safe in the sense that it
+  never risks a *wrong* reuse — but "always create a duplicate
+  instead" turned out to be a real, not just theoretical, problem.
+  Mitigated (not fixed at the root) by `container_cache.json`
+  (`persistent_cache.py`): the script now remembers, itself, every
+  top container it has created, so re-running the same migration
+  against the same target doesn't depend on ArchivesSpace's search
+  working correctly for containers *this script* already knows about.
+  This only helps for the common case (re-running the same script) —
+  it doesn't fix the underlying search for a container someone else
+  created some other way, or if `container_cache.json` gets deleted.
+  The same field-name risk in principle applies to agent/genre/
+  digital-object dedup searches too, though none of those have been
+  confirmed broken the way this one was; the same `persistent_cache.py`
+  mechanism could be applied to them the same way if that turns out
+  to be needed.
 - **Hierarchy node reuse** (`hierarchy.py`) has the same shape of
   caveat: a series/subseries node is looked up by title scoped to its
   parent via search, verified by fetching each candidate and checking

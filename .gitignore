@@ -3,9 +3,14 @@ secrets.json
 secrets_test.json
 *.secrets.json
 
+# Spreadsheets -- source data, kept local
+*.xlsx
+*.xls
+
 # Run-generated artifacts -- local bookkeeping, not source
 state.json
 pending_relink.json
+container_cache.json
 logs/
 
 # Python

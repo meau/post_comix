@@ -41,6 +41,7 @@ from digital_objects import resolve_digital_object, build_digital_object_instanc
 from containers import resolve_top_container_by_indicator
 from hierarchy import HierarchyWalker
 from locations import resolve_location, build_container_locations
+from persistent_cache import load_cache, save_cache
 from missing_locations import record_miss, write_missing_locations_report, write_pending_relink, coordinates_to_jsonable
 from generic_builders import (
     build_title, build_title_and_digital_object, has_title, build_extents,
@@ -240,6 +241,10 @@ def main():
     parser.add_argument("--log-dir", default="logs")
     parser.add_argument("--pending-relink-file", default="pending_relink.json",
                          help="Where to accumulate top containers created without a location match, for relink_locations.py.")
+    parser.add_argument("--container-cache-file", default="container_cache.json",
+                         help="Remembers top containers this script has created, across separate runs -- "
+                              "so re-running doesn't recreate ones ArchivesSpace's search can't reliably "
+                              "find again (a real, confirmed issue on some instances; see KNOWN_LIMITATIONS.md).")
     parser.add_argument("--publish", action="store_true",
                          help="Override the config's publish_default to True.")
     args = parser.parse_args()
@@ -326,7 +331,12 @@ def main():
         + (f" (rows nest under archival object {initial_parent_ref})" if initial_parent_ref else ""))
 
     state = RunState(args.state_file, log=log, dry_run=args.dry_run)
-    agent_cache, container_cache, genre_cache, digital_object_cache, location_cache = {}, {}, {}, {}, {}
+    agent_cache, genre_cache, digital_object_cache, location_cache = {}, {}, {}, {}
+    container_cache = load_cache(args.container_cache_file)
+    if container_cache:
+        log(f"Loaded {len(container_cache)} previously-created top container(s) from "
+            f"{args.container_cache_file} -- these won't be recreated even if ArchivesSpace's "
+            f"own search can't find them.")
     missing_locations = {}
     pending_relink = []
     wanted_rows = None
@@ -419,6 +429,8 @@ def main():
                             barcode=barcode, container_type=container_type,
                             container_locations=container_locations_payload,
                         )
+                        if container_link and container_link["status"] == "created":
+                            save_cache(args.container_cache_file, container_cache, log)
                         if coords and not location_link:
                             title_guess = build_title(row_values, header_index, mapping.title)
                             record_miss(missing_locations, coords, building, title_guess)

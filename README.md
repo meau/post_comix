@@ -129,6 +129,8 @@ run is interrupted or a row errors out, just re-run the same command
 | `--publish` | Create archival objects as *published* (default: unpublished) |
 | `--resource <url or id>` | Skip the interactive prompt |
 | `--xlsx`, `--secrets`, `--state-file`, `--log-dir` | Override default paths |
+| `--container-cache-file` | Where top containers this script creates are remembered across runs (default `container_cache.json`) — see KNOWN_LIMITATIONS.md |
+| `--pending-relink-file` | Where containers missing a location match are queued for `relink_locations.py` (default `pending_relink.json`) |
 
 ## Creating a resource record
 
