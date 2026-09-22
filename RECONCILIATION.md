@@ -47,18 +47,37 @@ downgrade real matches to local records with no way to tell the
 difference afterward. Every lookup retries with exponential backoff
 before giving up, and giving up is always logged distinctly.
 
-## The authority-ID collision guard
+## The conflict-recovery safety net
 
-Two *differently worded* spreadsheet values can resolve to the same
-external authority record — e.g. "DC Comics" and "National Periodical
-Publications" both matching the same LC NAF entry. Without a check,
-the second one would try to create a duplicate ArchivesSpace record
-authorized against the same URI, which ArchivesSpace rejects outright
-("Authority ID must be unique"). Every resolver checks for an
-existing record with that authority ID *before* creating, and — as a
-last-resort safety net — also catches ArchivesSpace's rejection and
-parses the conflicting record's URI out of the error message, reusing
-it instead of failing that row.
+Two different failure modes both end in ArchivesSpace rejecting a
+create with a "must be unique" error, and every creation path in this
+codebase (corporate/person agents, genre subjects, top containers,
+digital objects) catches both the same way: parse the conflicting
+record's URI out of the error message (`aspace_client.parse_conflicting_record_uri`)
+and reuse it instead of failing that row.
+
+- **Authority collision**: two *differently worded* spreadsheet
+  values resolve to the same external authority — e.g. "DC Comics"
+  and "National Periodical Publications" both matching the same LC
+  NAF entry. The LC/AAT-matched creation paths check for an existing
+  record with that authority ID *before* creating, so this is mostly
+  caught proactively; the catch is a last-resort backstop.
+- **Search-index lag**: a record genuinely was just created (often on
+  an earlier row in the very same run), but ArchivesSpace's search
+  index hasn't caught up yet, so the "does this already exist"
+  search that every resolver does first comes back empty even though
+  the record is really there. This is the more common cause in
+  practice, and it affects the **local-fallback** creation paths too
+  (not just the authority-matched ones) — a local agent, a local
+  genre subject, a top container, or a digital object can all hit
+  this exact same way, since none of them can check "by authority ID"
+  the way an LC/AAT match can. Every one of those paths has the same
+  catch-and-reuse wrapped around its create call for this reason.
+
+When this fires, the log says so explicitly ("likely a search-index
+lag from a very recent create on an earlier row") rather than framing
+it as an authority match, so you can tell the two situations apart
+when reviewing a run.
 
 ## Person names
 

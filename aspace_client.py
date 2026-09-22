@@ -116,3 +116,48 @@ class ArchivesSpaceClient:
 def _pretty(obj) -> str:
     import json
     return json.dumps(obj, indent=2, ensure_ascii=False)
+
+
+def parse_conflicting_record_uri(error_text: str, uri_pattern: str = None):
+    """Extracts the conflicting record's URI from an ArchivesSpace
+    "must be unique" style 400 error, e.g.
+
+      {"error":{"names":["Agent must be unique"],
+                "conflicting_record":["/agents/corporate_entities/7687"]}}
+
+    ArchivesSpaceError's message has a prefix before the JSON body
+    ("POST /x failed (400): {...}"), so this finds the embedded JSON
+    object rather than requiring the whole string to parse as JSON.
+    uri_pattern (a regex) is a fallback for when the JSON shape isn't
+    what's expected; pass the record-type-specific URI pattern for
+    the kind of record you're creating (e.g. r"/agents/people/\\d+").
+
+    This exists because a search-then-create pattern (used throughout
+    this codebase for every record type it creates-if-missing) is
+    vulnerable to ArchivesSpace's search index lagging behind recent
+    writes: a record created moments ago on an earlier row may not be
+    findable yet by a search on a later row, even though it genuinely
+    exists -- leading to a duplicate-create attempt that the database's
+    own uniqueness constraint correctly rejects. Catching that
+    rejection and reusing the conflicting record it names is the fix;
+    letting it propagate and crash that row is the bug.
+    """
+    import json as _json
+    import re
+
+    brace_idx = error_text.find("{")
+    if brace_idx != -1:
+        try:
+            data = _json.loads(error_text[brace_idx:])
+            conflicting = data.get("error", {}).get("conflicting_record")
+            if conflicting:
+                return conflicting[0]
+        except Exception:  # noqa: BLE001
+            pass
+
+    if uri_pattern:
+        match = re.search(uri_pattern, error_text)
+        if match:
+            return match.group(0)
+
+    return None

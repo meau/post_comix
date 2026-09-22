@@ -30,7 +30,7 @@ even though it appears on many rows.
 import json as _json
 import re
 
-from aspace_client import ArchivesSpaceError
+from aspace_client import ArchivesSpaceError, parse_conflicting_record_uri
 from loc_client import LCLookupError, find_conservative_match, normalize as loc_normalize
 
 
@@ -90,21 +90,16 @@ def _search_agent_by_authority_id(client, lc_uri: str):
 
 
 def _parse_conflicting_agent_uri(error_text: str):
-    """Last-resort fallback: if we somehow still race into
-    ArchivesSpace's "Authority ID must be unique" rejection (e.g. the
-    duplicate was created by something else between our search and
-    our POST), pull the existing agent's URI out of the error so we
-    can link to it instead of failing the whole row.
+    """If we race into ArchivesSpace's "must be unique" rejection --
+    either the "Authority ID must be unique" case (a duplicate LC-
+    linked create) or the plain "Agent must be unique" case (a
+    duplicate local-name create, most often caused by ArchivesSpace's
+    search index lagging behind a very recent write from an earlier
+    row in this same run, so _search_existing_agent's check above
+    didn't find it yet) -- pull the existing agent's URI out of the
+    error so we can link to it instead of failing the whole row.
     """
-    try:
-        data = _json.loads(error_text)
-        conflicting = data.get("error", {}).get("conflicting_record")
-        if conflicting:
-            return conflicting[0]
-    except Exception:  # noqa: BLE001
-        pass
-    match = re.search(r"/agents/corporate_entities/\d+", error_text)
-    return match.group(0) if match else None
+    return parse_conflicting_record_uri(error_text, r"/agents/corporate_entities/\d+")
 
 
 def resolve_publisher_agent(publisher_name: str, client, agent_cache: dict, log) -> dict:
@@ -206,7 +201,18 @@ def resolve_publisher_agent(publisher_name: str, client, agent_cache: dict, log)
             "is_display_name": True,
         }],
     }
-    created = client.post("/agents/corporate_entities", payload)
+    try:
+        created = client.post("/agents/corporate_entities", payload)
+    except ArchivesSpaceError as exc:
+        conflict_uri = _parse_conflicting_agent_uri(str(exc))
+        if conflict_uri:
+            result = {"uri": conflict_uri, "status": "linked_existing"}
+            log(f'Publisher "{name}": ArchivesSpace already had an agent with this name '
+                f'({conflict_uri}) -- likely a search-index lag from a very recent create on '
+                f'an earlier row; reusing it instead of failing.')
+            agent_cache[cache_key] = result
+            return result
+        raise
     uri = created.get("uri")
     status = "created_local_lc_lookup_failed" if lc_lookup_failed else "created_local"
     log(f'Publisher "{name}": no ArchivesSpace or confident LC NAF match -> '

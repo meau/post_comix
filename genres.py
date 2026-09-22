@@ -30,6 +30,7 @@ collection-scoping search elsewhere in this codebase.
 import json as _json
 
 from aat_client import AATLookupError, find_conservative_match, normalize as aat_normalize
+from aspace_client import ArchivesSpaceError, parse_conflicting_record_uri
 
 
 def _search_existing_genre(client, term_name: str):
@@ -133,7 +134,17 @@ def resolve_genre_term(term_name: str, client, genre_cache: dict, log,
                 "vocabulary": vocabulary_ref,
             }],
         }
-        created = client.post("/subjects", payload)
+        try:
+            created = client.post("/subjects", payload)
+        except ArchivesSpaceError as exc:
+            conflict_uri = parse_conflicting_record_uri(str(exc), r"/subjects/\d+")
+            if conflict_uri:
+                result = {"uri": conflict_uri, "status": "linked_existing_by_authority_id"}
+                log(f'Genre term "{name}": ArchivesSpace already had a subject for AAT URI '
+                    f'{aat_match["uri"]} ({conflict_uri}) -- reusing it instead of failing.')
+                genre_cache[cache_key] = result
+                return result
+            raise
         uri = created.get("uri")
         result = {"uri": uri, "status": "linked_aat"}
         log(f'Genre term "{name}": matched AAT "{aat_match["label"]}" '
@@ -152,7 +163,18 @@ def resolve_genre_term(term_name: str, client, genre_cache: dict, log,
             "vocabulary": vocabulary_ref,
         }],
     }
-    created = client.post("/subjects", payload)
+    try:
+        created = client.post("/subjects", payload)
+    except ArchivesSpaceError as exc:
+        conflict_uri = parse_conflicting_record_uri(str(exc), r"/subjects/\d+")
+        if conflict_uri:
+            result = {"uri": conflict_uri, "status": "linked_existing"}
+            log(f'Genre term "{name}": ArchivesSpace already had a subject with this term '
+                f'({conflict_uri}) -- likely a search-index lag from a very recent create on '
+                f'an earlier row; reusing it instead of failing.')
+            genre_cache[cache_key] = result
+            return result
+        raise
     uri = created.get("uri")
     status = "created_local_aat_lookup_failed" if aat_lookup_failed else "created_local"
     log(f'Genre term "{name}": no ArchivesSpace or confident AAT match -> created local subject {uri}')

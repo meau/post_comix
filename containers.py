@@ -25,6 +25,8 @@ see the note in README.md.
 
 import json as _json
 
+from aspace_client import ArchivesSpaceError, parse_conflicting_record_uri
+
 
 def _search_existing_top_container(client, indicator: str, resource_ref: str):
     try:
@@ -130,7 +132,21 @@ def resolve_top_container_by_indicator(indicator: str, client, container_cache: 
         payload["barcode"] = str(barcode)
     if container_locations:
         payload["container_locations"] = container_locations
-    created = client.post(f"{client.repo_prefix}/top_containers", payload)
+    try:
+        created = client.post(f"{client.repo_prefix}/top_containers", payload)
+    except ArchivesSpaceError as exc:
+        # Same reasoning as agents.py/genres.py: this is most often
+        # ArchivesSpace's search index lagging behind a very recent
+        # create from an earlier row, not a genuine data problem --
+        # reuse the conflicting record rather than failing the row.
+        conflict_uri = parse_conflicting_record_uri(str(exc), r"/top_containers/\d+")
+        if conflict_uri:
+            result = {"uri": conflict_uri, "status": "reused_existing"}
+            log(f'Box "{indicator}": ArchivesSpace already had a top container matching this '
+                f'({conflict_uri}) -- reusing it instead of failing.')
+            container_cache[cache_key] = result
+            return result
+        raise
     uri = created.get("uri")
     result = {"uri": uri, "status": "created", "location_attached": bool(container_locations)}
     log(f'Box "{indicator}": created new top container {uri}'

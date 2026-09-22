@@ -26,7 +26,7 @@ here; the suggest2 fallback IS correctly filtered to PersonalName.
 
 import re
 
-from aspace_client import ArchivesSpaceError
+from aspace_client import ArchivesSpaceError, parse_conflicting_record_uri
 from loc_client import LCLookupError, find_conservative_match, normalize as loc_normalize
 
 
@@ -84,16 +84,11 @@ def _search_person_agent_by_authority_id(client, lc_uri: str):
 
 
 def _parse_conflicting_agent_uri(error_text: str):
-    import json as _json
-    try:
-        data = _json.loads(error_text)
-        conflicting = data.get("error", {}).get("conflicting_record")
-        if conflicting:
-            return conflicting[0]
-    except Exception:  # noqa: BLE001
-        pass
-    match = re.search(r"/agents/people/\d+", error_text)
-    return match.group(0) if match else None
+    """See agents.py's identically-named function for why this exists
+    -- same reasoning applies here (search-index lag vs. a genuine
+    authority conflict), just for /agents/people instead of
+    /agents/corporate_entities."""
+    return parse_conflicting_record_uri(error_text, r"/agents/people/\d+")
 
 
 def resolve_person_agent(name_raw: str, client, agent_cache: dict, log) -> dict:
@@ -183,7 +178,18 @@ def resolve_person_agent(name_raw: str, client, agent_cache: dict, log) -> dict:
             "name_order": "inverted" if rest else "direct",
         }],
     }
-    created = client.post("/agents/people", payload)
+    try:
+        created = client.post("/agents/people", payload)
+    except ArchivesSpaceError as exc:
+        conflict_uri = _parse_conflicting_agent_uri(str(exc))
+        if conflict_uri:
+            result = {"uri": conflict_uri, "status": "linked_existing"}
+            log(f'Person "{name}": ArchivesSpace already had an agent with this name '
+                f'({conflict_uri}) -- likely a search-index lag from a very recent create on '
+                f'an earlier row; reusing it instead of failing.')
+            agent_cache[cache_key] = result
+            return result
+        raise
     uri = created.get("uri")
     status = "created_local_lc_lookup_failed" if lc_lookup_failed else "created_local"
     log(f'Person "{name}": no ArchivesSpace or confident LC NAF match -> created local DACS agent {uri}')

@@ -14,6 +14,8 @@ appearing on more than one row doesn't create duplicate records.
 
 import re
 
+from aspace_client import ArchivesSpaceError, parse_conflicting_record_uri
+
 URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 
 
@@ -71,7 +73,19 @@ def resolve_digital_object(url: str, title: str, client, digital_object_cache: d
             "publish": True,
         }],
     }
-    created = client.post("/digital_objects", payload)
+    try:
+        created = client.post("/digital_objects", payload)
+    except ArchivesSpaceError as exc:
+        # digital_object_id must be unique -- same search-index-lag
+        # reasoning as agents.py/genres.py/containers.py.
+        conflict_uri = parse_conflicting_record_uri(str(exc), r"/digital_objects/\d+")
+        if conflict_uri:
+            result = {"uri": conflict_uri, "status": "linked_existing"}
+            log(f'Digital object URL "{url}": ArchivesSpace already had a digital object with '
+                f'this id ({conflict_uri}) -- reusing it instead of failing.')
+            digital_object_cache[url] = result
+            return result
+        raise
     uri = created.get("uri")
     result = {"uri": uri, "status": "created"}
     log(f'Digital object URL "{url}": created digital object {uri}')

@@ -5,6 +5,23 @@ place instead of scattered across code comments and past
 conversation. Check here before assuming something "just works" on
 new data.
 
+## Search-index lag and conflict recovery
+
+ArchivesSpace's search index can lag behind very recent writes — a
+record created on one row may not be findable yet by a search on the
+next, even though it genuinely exists. Every creation path in this
+codebase that could hit this (corporate/person agents, genre
+subjects, top containers, digital objects) catches the resulting
+"must be unique" rejection and reuses the conflicting record instead
+of failing that row — see RECONCILIATION.md's "conflict-recovery
+safety net" section. This was a real bug until it wasn't: the
+local-fallback agent-creation path had no such catch for a while and
+would crash the row outright on exactly this scenario, which is what
+first surfaced this whole category of issue.
+
+**Hierarchy nodes are the one exception** — see the hierarchy note
+below for why they can't self-heal the same way.
+
 ## Verified vs. unverified ArchivesSpace schema assumptions
 
 Most of the ArchivesSpace field/enum choices in this codebase were
@@ -33,7 +50,15 @@ codes). A few were **not** independently confirmed the same way:
   caveat: a series/subseries node is looked up by title scoped to its
   parent via search, verified by fetching each candidate and checking
   its actual `parent` ref. Confirm this on a small `--dry-run` batch
-  before a full run on a new instance.
+  before a full run on a new instance. **Unlike agents, genre
+  subjects, top containers, and digital objects, this one has no
+  conflict-recovery safety net** — ArchivesSpace doesn't enforce
+  title uniqueness on archival_objects, so there's no rejection to
+  catch if search-index lag causes the same series to be created
+  twice; it would just silently create a duplicate series node rather
+  than erroring. If you see duplicate series/subseries after a run
+  processed rows unusually fast, this is why — worth checking for
+  before relying on hierarchy output at scale on a fresh instance.
 - **Location matching** (`locations.py`) searches on the most specific
   coordinate present, then verifies every candidate by fetching it and
   comparing all coordinate fields directly — so a search-index quirk
