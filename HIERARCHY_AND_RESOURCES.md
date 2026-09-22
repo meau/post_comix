@@ -1,5 +1,36 @@
 # Hierarchy and resource creation
 
+## Targeting a resource or an archival object
+
+`migrate.py`'s prompt (or `--resource`) accepts either kind of target:
+
+- **A resource** — rows become direct children of it (the original,
+  default behavior). Paste its URL, or just its bare numeric ID.
+- **An archival object** — rows nest *under that object* instead.
+  Paste its full URL (staff, public, or API) — a bare number is
+  always assumed to mean a resource, so an archival object needs the
+  URL to be unambiguous.
+
+Every archival object still needs a `resource` reference regardless
+of target — ArchivesSpace requires it even for objects deep in a
+tree. When you target an archival object, `migrate.py` fetches it
+first to find its actual owning resource (that's not something
+derivable from the pasted URL/ID alone), and only then starts
+processing rows.
+
+If your config also uses `hierarchy:` (see `CONFIG_REFERENCE.md`),
+targeting an archival object means the *top-level* series/subseries
+nodes nest under that object too — not under the resource directly.
+This matters for the payload's shape: a top-level node targeting a
+resource gets no `parent` field at all (only `resource`); one nesting
+under an archival object gets `parent` pointing at that object. An
+archival object's `parent` field must never point at a resource —
+ArchivesSpace's schema doesn't allow it, and earlier code briefly did
+exactly that for top-level hierarchy nodes when the target was a
+resource, before the `initial_parent_ref` handling was corrected to
+distinguish "no parent" from "parent is the resource."
+
+
 These are the two features for spreadsheets that need more structure
 than "flat rows under one existing resource."
 

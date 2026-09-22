@@ -49,3 +49,45 @@ def parse_resource_reference(text: str):
 
 def build_resource_ref(repository_id: str, resource_id: str) -> str:
     return f"/repositories/{repository_id}/resources/{resource_id}"
+
+
+def build_archival_object_ref(repository_id: str, archival_object_id: str) -> str:
+    return f"/repositories/{repository_id}/archival_objects/{archival_object_id}"
+
+
+def parse_target_reference(text: str):
+    """Like parse_resource_reference, but accepts either a resource OR
+    an archival_object URL/URI -- used by migrate.py, which can post
+    spreadsheet rows as children of either kind of thing.
+
+    Returns (kind, id, repository_id) where kind is "resource" or
+    "archival_object", and repository_id may be None if not present
+    in the given text.
+
+    A bare number (no URL) is assumed to be a RESOURCE id, matching
+    parse_resource_reference's prior behavior -- to target an
+    archival object, paste its actual URL (staff, public, or API),
+    which unambiguously contains "/archival_objects/".
+    """
+    text = text.strip()
+    if not text:
+        raise ResourceUrlError("No resource/archival object URL or ID provided.")
+
+    if text.isdigit():
+        return "resource", text, None
+
+    repo_match = re.search(r"/repositories/(\d+)", text)
+    repository_id = repo_match.group(1) if repo_match else None
+
+    ao_match = re.search(r"/archival_objects/(\d+)", text)
+    if ao_match:
+        return "archival_object", ao_match.group(1), repository_id
+
+    resource_match = re.search(r"/resources/(\d+)", text)
+    if resource_match:
+        return "resource", resource_match.group(1), repository_id
+
+    raise ResourceUrlError(
+        f"Couldn't find a resource or archival object ID in {text!r}. Paste the "
+        "staff URL, public URL, API URI, or (for a resource) just its numeric ID."
+    )

@@ -47,7 +47,7 @@ from generic_builders import (
     build_notes, build_dates, parse_box_value, get_box_barcode_from_column, clean_str,
 )
 from mapping import MappingConfig, get_value
-from resource_url import parse_resource_reference, build_resource_ref, ResourceUrlError
+from resource_url import parse_target_reference, build_resource_ref, build_archival_object_ref, ResourceUrlError
 from state import RunState
 
 SECRETS_TEMPLATE = {
@@ -171,7 +171,7 @@ def build_archival_object(row_values, header_index, mapping: MappingConfig,
         "linked_agents": _build_linked_agents(agent_links),
         "subjects": _build_subjects(genre_link),
     }
-    if parent_ref and parent_ref != resource_ref:
+    if parent_ref:
         payload["parent"] = {"ref": parent_ref}
     return payload, title, merge_url
 
@@ -255,11 +255,13 @@ def main():
 
     secrets = load_or_init_secrets(args.secrets)
 
-    resource_input = args.resource or input(
-        "Paste the resource's staff URL, public URL, API URI, or numeric ID: "
+    target_input = args.resource or input(
+        "Paste the target's staff URL, public URL, API URI, or numeric ID -- a "
+        "RESOURCE (rows become direct children) or an ARCHIVAL OBJECT (rows nest "
+        "under it) both work: "
     ).strip()
     try:
-        resource_id, url_repo_id = parse_resource_reference(resource_input)
+        target_kind, target_id, url_repo_id = parse_target_reference(target_input)
     except ResourceUrlError as exc:
         print(str(exc))
         sys.exit(1)
@@ -268,7 +270,6 @@ def main():
     if url_repo_id and str(url_repo_id) != str(repository_id):
         print(f"NOTE: the URL you pasted references repository {url_repo_id}, "
               f"but secrets.json has repository_id={repository_id}. Using secrets.json's value.")
-    resource_ref = build_resource_ref(repository_id, resource_id)
 
     os.makedirs(args.log_dir, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -283,7 +284,6 @@ def main():
     log(f"=== Run started {timestamp} ===")
     log(f"Config: {args.config} ({mapping.name})")
     log(f"Spreadsheet: {args.xlsx} | Sheets: {sheets}")
-    log(f"Target resource: {resource_ref}")
     log(f"Dry run: {args.dry_run} | Publish new archival objects: {mapping.publish_default}")
 
     try:
@@ -294,6 +294,36 @@ def main():
     except ArchivesSpaceError as exc:
         log(f"Could not connect/log in to ArchivesSpace: {exc}")
         sys.exit(1)
+
+    # Every archival_object payload needs a "resource" ref regardless of
+    # target kind -- ArchivesSpace requires it even for objects deep in
+    # a tree. Targeting a resource directly: that's it, no "parent".
+    # Targeting an archival object: rows nest under IT (initial_parent_ref),
+    # but "resource" still has to be that object's own OWNING resource,
+    # which only a real GET can tell us -- not something we can construct
+    # from the pasted URL/ID alone.
+    initial_parent_ref = None
+    if target_kind == "resource":
+        resource_ref = build_resource_ref(repository_id, target_id)
+    else:
+        initial_parent_ref = build_archival_object_ref(repository_id, target_id)
+        try:
+            target_record = client.get(initial_parent_ref)
+        except ArchivesSpaceError as exc:
+            log(f"Could not fetch archival object {initial_parent_ref}: {exc}")
+            sys.exit(1)
+        if not target_record:
+            log(f"Archival object {initial_parent_ref} not found.")
+            sys.exit(1)
+        resource_ref = (target_record.get("resource") or {}).get("ref")
+        if not resource_ref:
+            log(f"Archival object {initial_parent_ref} has no owning resource on record -- "
+                f"can't proceed (every archival_object needs one).")
+            sys.exit(1)
+        log(f"Target archival object {initial_parent_ref} belongs to resource {resource_ref}")
+
+    log(f"Target resource: {resource_ref}"
+        + (f" (rows nest under archival object {initial_parent_ref})" if initial_parent_ref else ""))
 
     state = RunState(args.state_file, log=log, dry_run=args.dry_run)
     agent_cache, container_cache, genre_cache, digital_object_cache, location_cache = {}, {}, {}, {}, {}
@@ -314,7 +344,9 @@ def main():
         elif args.limit:
             rows = rows[: args.limit]
 
-        walker = HierarchyWalker(mapping.hierarchy, resource_ref, client, log) if mapping.hierarchy else None
+        walker = HierarchyWalker(
+            mapping.hierarchy, resource_ref, client, log, initial_parent_ref=initial_parent_ref,
+        ) if mapping.hierarchy else None
 
         for excel_row_num, row_values in rows:
             state_key = f"{sheet_name}::{excel_row_num}"
@@ -343,7 +375,7 @@ def main():
                 skipped += 1
                 continue
 
-            parent_ref = walker.current_parent_ref() if walker else resource_ref
+            parent_ref = walker.current_parent_ref() if walker else initial_parent_ref
 
             row_warnings = []
             try:

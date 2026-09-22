@@ -98,9 +98,19 @@ class HierarchyWalker:
     since a new series should not inherit the old subseries.
     """
 
-    def __init__(self, hierarchy_levels, resource_ref, client, log):
+    def __init__(self, hierarchy_levels, resource_ref, client, log, initial_parent_ref=None):
+        """initial_parent_ref: the archival_object a top-level hierarchy
+        node should nest under, if the user targeted an archival object
+        rather than the resource itself -- None means "directly under
+        the resource," which correctly means top-level nodes get NO
+        "parent" field at all (only "resource"). Passing resource_ref
+        here instead of None would be a real bug: an archival_object's
+        "parent" field must reference another archival_object, never
+        the resource itself -- ArchivesSpace's schema doesn't allow it.
+        """
         self.levels = hierarchy_levels or []
         self.resource_ref = resource_ref
+        self.initial_parent_ref = initial_parent_ref
         self.client = client
         self.log = log
         self.cache = {}
@@ -117,7 +127,7 @@ class HierarchyWalker:
             if not id_val and not title_val:
                 continue  # inherit whatever this level currently is
 
-            parent_ref = self._current[depth - 1]["uri"] if depth > 0 and self._current[depth - 1] else self.resource_ref
+            parent_ref = self._current[depth - 1]["uri"] if depth > 0 and self._current[depth - 1] else self.initial_parent_ref
             node = resolve_hierarchy_node(
                 id_val or title_val, title_val or id_val, level_cfg["level"],
                 parent_ref, self.resource_ref, self.client, self.cache, self.log,
@@ -128,9 +138,10 @@ class HierarchyWalker:
                 self._current[deeper] = None
 
     def current_parent_ref(self):
-        """The deepest currently-active node's URI, or the resource
-        itself if no hierarchy level has been set yet."""
+        """The deepest currently-active node's URI, or initial_parent_ref
+        (None if the target was the resource itself) if no hierarchy
+        level has been set yet."""
         for node in reversed(self._current):
             if node:
                 return node["uri"]
-        return self.resource_ref
+        return self.initial_parent_ref
