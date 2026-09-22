@@ -132,16 +132,35 @@ On success, prints the new resource's URI — use that with
    `repository_id` in `secrets.json`), not the resource being
    created.
 
-### Known gaps in this feature
+### Added-entry agents and subjects
 
 The "Added entry" fields (`addedEntryPersonLC`, `addedEntrySubjectLC`,
-`addedEntryGenreAAT`, etc.) — additional linked agents and subjects
-at the resource level — are recognized but not wired to any resolver
-yet. If a sheet has real values in these, they're logged as a warning
-("not wired up yet — ask if you need this built") rather than
-silently dropped, but nothing gets linked. None of the source files
-seen so far have used them, so this hasn't been built out — flag it
-if you hit one that does.
+`addedEntryGenreAAT`, etc.) — additional linked agents and subjects at
+the resource level, beyond the primary creator — are wired up. Each
+field resolves against a specific authority (see
+`ADDED_ENTRY_SUBJECT_FIELDS`/`ADDED_ENTRY_AGENT_FIELDS` in
+`resource_builder.py`), using the same reuse → external-match →
+local-fallback pattern as everything else (`subjects.py`,
+`RECONCILIATION.md`). Decisions worth knowing about:
+
+- **Only a single entry per cell** — no delimiter-splitting for
+  multiple values in one cell. No real data has needed this yet.
+- **Added-entry people/corporate names link with `role: subject`**,
+  not `creator` — they represent who/what the collection is *about*,
+  not who made it. No MARC relator is set on them (relators describe
+  a creation relationship, which doesn't apply here).
+- **`addedEntrySubjectFAST` and `addedEntryOccupationLC` both resolve
+  against LCSH**, not FAST/LCDGT — a real, separate FAST integration
+  wasn't worth building for a field with heavy LCSH term overlap and
+  no real data yet; the result is labeled `source: lcsh`, not `fast`.
+  Same reasoning for occupation terms using LCSH rather than the
+  more specifically-correct LCDGT vocabulary.
+- **`...Local`-suffixed fields skip external lookup entirely** —
+  the field name itself declares no authority is being claimed, so
+  attempting (and potentially succeeding at) a lookup would silently
+  override that explicit choice. See `force_local` on
+  `resolve_publisher_agent`/`resolve_person_agent`, and the `"local"`
+  authority value on `subjects.resolve_subject`.
 
 `level: "collection"` and `finding_aid_status: "unprocessed"` are
 hardcoded defaults in `resource_builder.py`, since nothing in the

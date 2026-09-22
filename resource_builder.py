@@ -15,10 +15,14 @@ the sheet's own instructions, so there's nothing to make configurable
 yet. If a different institution's collection-level template shows up
 with a different vocabulary, this is the file to extend or fork.
 
-Known limitation: several of Brown's own "Added entry" fields
-(subjects, additional creators) aren't wired up yet -- they're
-present in FIELD_MAP as ignored/logged only. Ask before using this on
-a sheet that actually has them filled in.
+"Added entry" fields (additional subjects and creators, beyond the
+primary creator) are wired up -- see ADDED_ENTRY_SUBJECT_FIELDS and
+ADDED_ENTRY_AGENT_FIELDS below for exactly which authority each field
+resolves against, and RECONCILIATION.md for the decisions behind the
+FAST-as-LCSH and occupation-as-LCSH choices specifically. Each cell is
+treated as a single entry -- no delimiter-splitting for multiple
+values in one cell, by explicit decision (no real data has needed it
+yet).
 """
 
 DATA_ENTRY_COLUMN_INDEX = 4  # fixed position in this template: key, Required?, Repeatable?, Instructions, Data Entry
@@ -62,16 +66,39 @@ IGNORED_FIELDS = {
     "addedEntryTitle": "not yet wired up -- ambiguous which ArchivesSpace mechanism this should use; tell me if you need it",
 }
 
-# "Added entry" fields -> (resolver kind, role) -- not wired to a
-# resolver call yet (see module docstring); listed here so an
-# unmapped value is at least visible instead of silently dropped.
-UNIMPLEMENTED_AGENT_SUBJECT_FIELDS = [
-    "addedEntryPersonLC", "addedEntryPersonLocal", "addedEntryCorporateLC", "addedEntryCorporateLocal",
-    "addedEntrySubjectLC", "addedEntrySubjectLocal", "addedEntrySubjectFAST",
-    "addedEntryGeographicLC", "addedEntryGeographicLocal",
-    "addedEntryOccupationLC", "addedEntryOccupationLocal",
-    "addedEntryGenreAAT", "addedEntryGenreLCSH", "addedEntryGenreTGM", "addedEntryGenreRBGENR", "addedEntryGenreLocal",
-]
+# "Added entry" SUBJECT-type fields -> (ArchivesSpace term_type, authority).
+# authority is passed straight to subjects.resolve_subject() -- see that
+# module for what each authority value means. Two decisions folded in
+# here rather than building separate integrations for them: FAST terms
+# overlap heavily with LCSH, so addedEntrySubjectFAST searches LCSH and
+# labels the result "lcsh"; addedEntryOccupationLC also uses LCSH rather
+# than the more specifically-correct-but-unbuilt LCDGT vocabulary.
+ADDED_ENTRY_SUBJECT_FIELDS = {
+    "addedEntrySubjectLC": ("topical", "lcsh"),
+    "addedEntrySubjectLocal": ("topical", "local"),
+    "addedEntrySubjectFAST": ("topical", "lcsh"),
+    "addedEntryGeographicLC": ("geographic", "lcsh"),
+    "addedEntryGeographicLocal": ("geographic", "local"),
+    "addedEntryOccupationLC": ("occupation", "lcsh"),
+    "addedEntryOccupationLocal": ("occupation", "local"),
+    "addedEntryGenreAAT": ("genre_form", "aat"),
+    "addedEntryGenreLCSH": ("genre_form", "lcsh"),
+    "addedEntryGenreTGM": ("genre_form", "tgm"),
+    "addedEntryGenreRBGENR": ("genre_form", "rbmscv"),
+    "addedEntryGenreLocal": ("genre_form", "local"),
+}
+
+# "Added entry" AGENT-type fields -> (agent_type, force_local).
+# Linked with role "subject" (not "creator") -- by explicit decision,
+# these represent who/what the collection is ABOUT, not who made it.
+# No MARC relator is set on them: relators describe the nature of a
+# CREATION relationship, which doesn't apply to a subject-of-work link.
+ADDED_ENTRY_AGENT_FIELDS = {
+    "addedEntryPersonLC": ("person", False),
+    "addedEntryPersonLocal": ("person", True),
+    "addedEntryCorporateLC": ("corporate", False),
+    "addedEntryCorporateLocal": ("corporate", True),
+}
 
 LANGUAGE_CODES = {
     "english": "eng", "eng": "eng",
@@ -147,10 +174,11 @@ def _parse_extent_text(text: str):
     }
 
 
-def build_resource_payload(fields: dict, resolve_creator_agent, warnings: list) -> dict:
-    """resolve_creator_agent(name, agent_type) -> {"uri": ...} or None
-    -- pass in a closure over your ArchivesSpace client/caches so this
-    module doesn't need its own copy of the agent-resolution logic.
+def build_resource_payload(fields: dict, resolve_creator_agent, resolve_subject_term, warnings: list) -> dict:
+    """resolve_creator_agent(name, agent_type, force_local=False) -> {"uri": ...} or None
+    resolve_subject_term(term_name, term_type, authority) -> {"uri": ...} or None
+    -- pass in closures over your ArchivesSpace client/caches so this
+    module doesn't need its own copy of the agent/subject-resolution logic.
     """
     payload = {
         "jsonmodel_type": "resource",
@@ -163,6 +191,7 @@ def build_resource_payload(fields: dict, resolve_creator_agent, warnings: list) 
         "dates": [],
         "notes": [],
         "linked_agents": [],
+        "subjects": [],
         "lang_materials": [],
     }
 
@@ -230,12 +259,28 @@ def build_resource_payload(fields: dict, resolve_creator_agent, warnings: list) 
         if link:
             payload["linked_agents"].append({"ref": link["uri"], "role": "creator", "relator": "cre"})
 
+    # Added-entry people/corporate names -- role "subject", per the
+    # decision recorded in ADDED_ENTRY_AGENT_FIELDS above. Single
+    # entry per cell (no delimiter-splitting), by explicit decision.
+    for field_key, (agent_type, force_local) in ADDED_ENTRY_AGENT_FIELDS.items():
+        val = fields.get(field_key)
+        if not val:
+            continue
+        link = resolve_creator_agent(val, agent_type, force_local=force_local)
+        if link:
+            payload["linked_agents"].append({"ref": link["uri"], "role": "subject"})
+
+    # Added-entry subjects/geographic/occupation/genre terms.
+    for field_key, (term_type, authority) in ADDED_ENTRY_SUBJECT_FIELDS.items():
+        val = fields.get(field_key)
+        if not val:
+            continue
+        link = resolve_subject_term(val, term_type, authority)
+        if link:
+            payload["subjects"].append({"ref": link["uri"]})
+
     for field_key, reason in IGNORED_FIELDS.items():
         if fields.get(field_key):
             warnings.append(f'{field_key} has a value ({fields[field_key]!r}) but is not used: {reason}')
-    for field_key in UNIMPLEMENTED_AGENT_SUBJECT_FIELDS:
-        if fields.get(field_key):
-            warnings.append(f'{field_key} has a value ({fields[field_key]!r}) but "added entry" fields '
-                             f'are not wired up yet -- nothing was linked for this. Ask if you need this built.')
 
     return payload

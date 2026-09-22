@@ -25,6 +25,7 @@ import sys
 from aspace_client import ArchivesSpaceClient, ArchivesSpaceError
 from agents import resolve_publisher_agent
 from people_agents import resolve_person_agent
+from subjects import resolve_subject
 from migrate import load_or_init_secrets
 from resource_builder import read_collection_level_data, check_required_fields, build_resource_payload
 
@@ -79,12 +80,16 @@ def main():
               "(weaker than an ID match) -- if this creates a duplicate on a re-run, that's why.")
 
     agent_cache = {}
+    subject_cache = {}
 
-    def resolve_creator_agent(name, agent_type):
+    def resolve_creator_agent(name, agent_type, force_local=False):
         resolver = resolve_person_agent if agent_type == "person" else resolve_publisher_agent
-        return resolver(name, client, agent_cache, log)
+        return resolver(name, client, agent_cache, log, force_local=force_local)
 
-    payload = build_resource_payload(fields, resolve_creator_agent, warnings)
+    def resolve_subject_term(term_name, term_type, authority):
+        return resolve_subject(term_name, term_type, authority, client, subject_cache, log)
+
+    payload = build_resource_payload(fields, resolve_creator_agent, resolve_subject_term, warnings)
 
     if warnings:
         print("\n=== Warnings ===")

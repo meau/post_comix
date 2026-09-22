@@ -125,11 +125,6 @@ codes). A few were **not** independently confirmed the same way:
 
 ## Resource creation
 
-- The "Added entry" fields on a `Collection-Level Data` sheet
-  (additional subjects and creators beyond the primary one) are
-  recognized but not wired to any resolver — see
-  `HIERARCHY_AND_RESOURCES.md`. Logged as a warning if present with a
-  real value, never silently dropped, but nothing gets linked.
 - `level: "collection"` and `finding_aid_status: "unprocessed"` are
   hardcoded defaults, not read from the sheet.
 - Existence checking for "does this resource already exist" falls
@@ -137,15 +132,28 @@ codes). A few were **not** independently confirmed the same way:
   than an ID match, and could create a duplicate on a re-run after a
   title edit.
 
-## External lookups (LC NAF, Getty AAT)
+## External lookups (LC NAF, LCSH, TGM, RBMSCV, Getty AAT)
 
-- Both are public web services outside this project's control —
-  expect occasional lookup failures under heavy load. These are
-  designed to fail safe (see `RECONCILIATION.md`'s
-  `created_local_lc_lookup_failed` / `created_local_aat_lookup_failed`
-  statuses) rather than silently mistaken for a confirmed absence,
-  but they still mean a local record gets created that might need
-  manual reconciliation once the network issue clears.
+- All of these are public web services outside this project's
+  control — expect occasional lookup failures under heavy load.
+  These are designed to fail safe (see `RECONCILIATION.md`'s
+  `created_local_<authority>_lookup_failed` statuses) rather than
+  silently mistaken for a confirmed absence, but they still mean a
+  local record gets created that might need manual reconciliation
+  once the network issue clears.
+- **FAST and LC Demographic Group Terms (LCDGT) are deliberately not
+  integrated at all**, by explicit decision — `addedEntrySubjectFAST`
+  and `addedEntryOccupationLC` both resolve against LCSH instead (see
+  `HIERARCHY_AND_RESOURCES.md`). If a term genuinely doesn't have an
+  LCSH equivalent, it'll fall through to a local subject rather than
+  a real FAST/LCDGT match — that's expected, not a bug, given the
+  decision to not build those integrations.
+- LCSH, TGM, and RBMSCV lookups reuse the exact same conservative-
+  match machinery as LC NAF (same module, `loc_client.py`, just a
+  different `base_path`) — not independently stress-tested beyond
+  what's shown in this project's own offline tests. Worth a small
+  real batch before trusting any of the three at scale, same caution
+  as everything else search-based in this codebase.
 - The LC "known label" redirect lookup isn't restricted by name type
   (personal vs. corporate) — a personal name string could in
   principle redirect to a corporate heading sharing the exact text.

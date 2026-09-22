@@ -102,15 +102,24 @@ def _parse_conflicting_agent_uri(error_text: str):
     return parse_conflicting_record_uri(error_text, r"/agents/corporate_entities/\d+")
 
 
-def resolve_publisher_agent(publisher_name: str, client, agent_cache: dict, log) -> dict:
+def resolve_publisher_agent(publisher_name: str, client, agent_cache: dict, log,
+                             force_local: bool = False) -> dict:
     """Returns {"uri": <agent uri>, "status": <one of the strings below>}
     or None if publisher_name is blank.
+
+    force_local: skip the LC NAF lookup entirely and go straight to
+    local creation -- for callers whose field explicitly declares "no
+    authority claimed" (e.g. an added-entry "...Local" field), where
+    attempting (and potentially succeeding at) an LC match would
+    silently override what the archivist's own field choice already
+    said. Still checks for reuse by name first, same as always.
 
     status is one of:
       "linked_existing"            -- reused an agent already in ArchivesSpace, matched by name
       "linked_existing_by_authority_id" -- reused an agent already authorized against this LC URI
       "linked_loc"                 -- created a new agent authorized against LC NAF
-      "created_local"              -- created a new local/DACS agent (confirmed no LC NAF match)
+      "created_local"              -- created a new local/DACS agent (confirmed no LC NAF match,
+                                       or force_local was set)
       "created_local_lc_lookup_failed" -- created a new local/DACS agent because the LC NAF
                                           lookup itself failed (network/timeout) -- NOT a
                                           confirmed absence from LC NAF; worth a manual check
@@ -132,16 +141,17 @@ def resolve_publisher_agent(publisher_name: str, client, agent_cache: dict, log)
         agent_cache[cache_key] = result
         return result
 
-    # 2. Conservative LC NAF match?
+    # 2. Conservative LC NAF match? (skipped entirely when force_local)
     loc_match = None
     lc_lookup_failed = False
-    try:
-        loc_match = find_conservative_match(name)
-    except LCLookupError as exc:
-        lc_lookup_failed = True
-        log(f'Publisher "{name}": LC NAF lookup FAILED ({exc}) -- this is a network/lookup '
-            f'failure, not a confirmed absence from LC NAF. Falling back to a local agent; '
-            f'consider re-running or checking this publisher by hand.')
+    if not force_local:
+        try:
+            loc_match = find_conservative_match(name, rdftype="CorporateName")
+        except LCLookupError as exc:
+            lc_lookup_failed = True
+            log(f'Publisher "{name}": LC NAF lookup FAILED ({exc}) -- this is a network/lookup '
+                f'failure, not a confirmed absence from LC NAF. Falling back to a local agent; '
+                f'consider re-running or checking this publisher by hand.')
 
     if loc_match:
         # Has some OTHER spreadsheet spelling already created an agent
@@ -215,8 +225,8 @@ def resolve_publisher_agent(publisher_name: str, client, agent_cache: dict, log)
         raise
     uri = created.get("uri")
     status = "created_local_lc_lookup_failed" if lc_lookup_failed else "created_local"
-    log(f'Publisher "{name}": no ArchivesSpace or confident LC NAF match -> '
-        f'created local DACS agent {uri}')
+    reason = "explicitly local field, no lookup attempted" if force_local else "no ArchivesSpace or confident LC NAF match"
+    log(f'Publisher "{name}": {reason} -> created local DACS agent {uri}')
     result = {"uri": uri, "status": status}
     agent_cache[cache_key] = result
     return result

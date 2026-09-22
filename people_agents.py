@@ -91,10 +91,15 @@ def _parse_conflicting_agent_uri(error_text: str):
     return parse_conflicting_record_uri(error_text, r"/agents/people/\d+")
 
 
-def resolve_person_agent(name_raw: str, client, agent_cache: dict, log) -> dict:
+def resolve_person_agent(name_raw: str, client, agent_cache: dict, log,
+                          force_local: bool = False) -> dict:
     """Returns {"uri": <agent uri>, "status": <see agents.py's status
     list -- same meanings, "agent_person" instead of corporate>} or
     None if name_raw is blank.
+
+    force_local: see agents.py's resolve_publisher_agent -- same
+    reasoning, skips the LC NAF lookup entirely for a field that
+    already declares no authority is being claimed.
     """
     if not name_raw or not str(name_raw).strip():
         return None
@@ -113,12 +118,13 @@ def resolve_person_agent(name_raw: str, client, agent_cache: dict, log) -> dict:
 
     lc_match = None
     lc_lookup_failed = False
-    try:
-        lc_match = find_conservative_match(name, rdftype="PersonalName")
-    except LCLookupError as exc:
-        lc_lookup_failed = True
-        log(f'Person "{name}": LC NAF lookup FAILED ({exc}) -- network/lookup failure, '
-            f'not a confirmed absence from LC NAF. Falling back to a local agent.')
+    if not force_local:
+        try:
+            lc_match = find_conservative_match(name, rdftype="PersonalName")
+        except LCLookupError as exc:
+            lc_lookup_failed = True
+            log(f'Person "{name}": LC NAF lookup FAILED ({exc}) -- network/lookup failure, '
+                f'not a confirmed absence from LC NAF. Falling back to a local agent.')
 
     if lc_match:
         existing_by_authority = _search_person_agent_by_authority_id(client, lc_match["uri"])
@@ -192,7 +198,8 @@ def resolve_person_agent(name_raw: str, client, agent_cache: dict, log) -> dict:
         raise
     uri = created.get("uri")
     status = "created_local_lc_lookup_failed" if lc_lookup_failed else "created_local"
-    log(f'Person "{name}": no ArchivesSpace or confident LC NAF match -> created local DACS agent {uri}')
+    reason = "explicitly local field, no lookup attempted" if force_local else "no ArchivesSpace or confident LC NAF match"
+    log(f'Person "{name}": {reason} -> created local DACS agent {uri}')
     result = {"uri": uri, "status": status}
     agent_cache[cache_key] = result
     return result

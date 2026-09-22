@@ -1,20 +1,27 @@
-# Reconciliation: agents and genre terms
+# Reconciliation: agents and subject terms
 
-Three modules — `agents.py` (corporate), `people_agents.py`
-(personal), `genres.py` (Getty AAT genre/form terms) — all resolve a
-free-text spreadsheet value to an ArchivesSpace record using the same
+Four modules — `agents.py` (corporate), `people_agents.py`
+(personal), `genres.py` (row-level genre/format, always AAT), and
+`subjects.py` (the general resolver behind both `genres.py` and every
+resource-level "added entry" field) — all resolve a free-text
+spreadsheet value to an ArchivesSpace record using the same
 three-tier shape:
 
 1. **Reuse an existing ArchivesSpace record**, matched by name/term
    text (punctuation- and case-insensitive). Nothing new is created.
-2. **Match against an external authority** — the LC Name Authority
-   File for agents (`loc_client.py`), Getty AAT for genre terms
-   (`aat_client.py`) — and create a new record sourced from it if
-   found.
+2. **Match against an external authority** — LC Name Authority File
+   for agents, and for subjects one of Getty AAT, LC Subject Headings
+   (LCSH), the Thesaurus for Graphic Materials (TGM), or the RBMS
+   Controlled Vocabulary (RBMSCV), depending which the field calls
+   for (see `subjects.py`'s docstring and
+   `HIERARCHY_AND_RESOURCES.md`'s added-entry section) — and create a
+   new record sourced from it if found.
 3. **Otherwise, create a local record** — for agents, described per
-   DACS (`source: local`, `rules: dacs`); for genre terms, an
-   unreconciled local subject, clearly logged as such so it's easy to
-   find and reconcile by hand later.
+   DACS (`source: local`, `rules: dacs`); for subject-type records,
+   an unreconciled local term, clearly logged as such so it's easy to
+   find and reconcile by hand later. A field can also request "local"
+   directly, skipping lookup entirely — see the `force_local`/
+   `"local"` authority note below.
 
 This shape is deliberately conservative at every step: matching
 requires either an authority's own "strong match" flag or a single,
@@ -35,9 +42,17 @@ record.
 |---|---|
 | `linked_existing` | Reused a record already in ArchivesSpace, matched by name/term text |
 | `linked_existing_by_authority_id` | Reused a record already authorized against this exact external URI (catches two differently-worded spreadsheet values that turn out to be the same real-world thing) |
-| `linked_loc` / `linked_aat` | Created a new record authorized against the external source |
-| `created_local` | Created a local record — the external source was checked and confidently has no match |
-| `created_local_lc_lookup_failed` / `created_local_aat_lookup_failed` | Created a local record because **the lookup itself failed** (network/timeout) — this is *not* a confirmed absence from the external source. Worth a manual check or a re-run once the network issue clears. |
+| `linked_loc` / `linked_aat` / `linked_lcsh` / `linked_tgm` / `linked_rbmscv` | Created a new record authorized against that external source (`subjects.py` builds this string as `linked_<authority>`) |
+| `created_local` | Created a local record — the external source was checked and confidently has no match, or the field's own authority was `"local"` (no lookup attempted at all — see below) |
+| `created_local_lc_lookup_failed` / `created_local_aat_lookup_failed` / `created_local_<lcsh\|tgm\|rbmscv>_lookup_failed` | Created a local record because **the lookup itself failed** (network/timeout) — this is *not* a confirmed absence from the external source. Worth a manual check or a re-run once the network issue clears. |
+
+`force_local` (on `resolve_publisher_agent`/`resolve_person_agent`)
+and the `"local"` authority value (on `subjects.resolve_subject`)
+skip external lookup entirely, rather than attempting one and
+discarding a match — used for fields whose own name already declares
+no authority is being claimed (e.g. an added-entry `"...Local"`
+field). This is a different thing from "the lookup found nothing" —
+both end up `created_local`, but only one of them actually checked.
 
 That last distinction is the single most important thing to
 understand about this system: a network hiccup during an LC or AAT
