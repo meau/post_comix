@@ -9,12 +9,11 @@ and suggest_mapping.py for how to build one).
 
 Usage examples:
 
-  python migrate.py --config configs/peck_comics.yaml --xlsx Copy_of_Peck_Comics.xlsx --dry-run --limit 5
-  python migrate.py --config configs/ciaraldi_sheet1.yaml --xlsx Ciaraldi_Standard_Size.xlsx --dry-run --limit 5
+  python migrate.py --config configs/my_project.yaml --xlsx MySheet.xlsx --dry-run --limit 5
 
   # Override which sheet(s) the config applies to for this run:
-  python migrate.py --config configs/ciaraldi_by_title.yaml --xlsx Ciaraldi_Standard_Size.xlsx \
-      --sheets "Wizard,Flash" --dry-run
+  python migrate.py --config configs/my_project.yaml --xlsx MySheet.xlsx \
+      --sheets "Sheet2,Sheet3" --dry-run
 
 See README.md for the full flag list (--dry-run, --limit, --rows,
 --force, --publish, --resource, --secrets, --state-file, --log-dir).

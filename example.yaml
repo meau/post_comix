@@ -1,0 +1,83 @@
+# EXAMPLE mapping config -- the one config file that IS tracked in git.
+# Every other configs/*.yaml is project-specific (tied to one
+# spreadsheet's columns) and is deliberately gitignored.
+#
+# Don't edit this file for a real project. Instead, either:
+#   * run suggest_mapping.py against your sheet and let it draft a
+#     config for you (recommended -- see the README), or
+#   * copy this file to configs/my_project.yaml and edit the copy.
+#
+# Every field is documented in CONFIG_REFERENCE.md. Column names below
+# are placeholders -- replace each with a real header from your sheet.
+
+name: example_project
+sheets: ["Sheet1"]          # every sheet this config applies to
+has_header: true
+level: item
+instance_type: mixed_materials
+publish_default: false
+
+title:
+  column: "Title"
+
+publisher:                  # delete this block if there's no publisher column
+  column: "Publisher"
+
+extent:
+  column: "Issues"
+  extent_type: items
+
+date:
+  column: "Date"            # always parsed from the free-text expression
+  label: publication
+
+physdesc:                   # delete if there's no physical-description column
+  column: "Size"
+
+box:
+  column: "Box Number"
+  compound: false
+  # barcode_column: "Barcode"   # uncomment if barcodes live in their own column.
+  #                             # A barcode already on any container in the
+  #                             # repository is linked and reused (see
+  #                             # CONFIG_REFERENCE.md, "How containers are matched").
+
+scope_notes:
+  - column: "Contents"
+    prefix: "Includes "
+    ensure_trailing_period: true
+  - column: "Notes"
+
+# --- Optional features: uncomment and adapt as needed ---------------------
+
+# Positional columns (0-based) instead of header names. Use these when
+# several sheets share one config but their header text differs slightly,
+# or when a sheet has no header row (set has_header: false):
+#
+# title:
+#   column: 0
+# extent:
+#   column: 4
+
+# A real series/subseries hierarchy encoded in the sheet:
+# hierarchy:
+#   - level: series
+#     id_column: "seriesID"
+#     title_column: "seriesTitle"
+
+# Reconcile a format/resource-type column against Getty AAT:
+# genre:
+#   column: "typeOfResource"
+
+# Skip any row where this column has a value (e.g. an "Ignore" flag column),
+# and skip embedded instruction rows by Excel row number:
+# ignore_column:
+#   column: "Ignore"
+# skip_rows: [2]
+
+# Match shelf coordinates against existing ArchivesSpace Location records:
+# location:
+#   building: "Your Library"
+#   coordinate_1: {column: "Range", label: "Range"}
+#   coordinate_2: {column: "Bay", label: "Bay"}
+#   coordinate_3: {column: "Shelf", label: "Shelf"}

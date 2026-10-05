@@ -3,6 +3,11 @@ secrets.json
 secrets_test.json
 *.secrets.json
 
+# Project-specific mapping configs -- each is tied to one spreadsheet's
+# columns, so they stay local. configs/example.yaml is the tracked template.
+configs/*.yaml
+!configs/example.yaml
+
 # Spreadsheets -- source data, kept local
 *.xlsx
 *.xls

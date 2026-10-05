@@ -12,7 +12,7 @@ A `column` value in a field config can be either:
   - an integer -> a 0-based positional index (works even on headerless
     sheets, or when two columns share the same header text)
 
-See configs/peck_comics.yaml for a fully worked example, and
+See configs/example.yaml for an annotated template, and
 suggest_mapping.py for a tool that drafts a starting config from a
 sheet's actual headers.
 """

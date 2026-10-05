@@ -13,7 +13,7 @@ so it isn't tied to any one spreadsheet's column layout.
 | Migrate spreadsheet rows into an **existing** resource | `migrate.py --config configs/whatever.yaml` |
 | Create the **resource record itself** from a `Collection-Level Data` sheet, if it doesn't already exist | `create_resource.py` |
 | Attach real ArchivesSpace `Location` records once staff have created ones a migration run couldn't find | `relink_locations.py` |
-| Migrate the original Peck Comics file specifically | `migrate.py --config configs/peck_comics.yaml` |
+| Migrate a spreadsheet you already have a config for | `migrate.py --config configs/your_config.yaml --xlsx YourFile.xlsx` |
 
 ## Setup
 
@@ -84,9 +84,10 @@ For a headerless sheet, add `--no-header`.
 
 Once you have a draft, see **[CONFIG_REFERENCE.md](CONFIG_REFERENCE.md)**
 for the complete field-by-field reference — every option, with
-examples. `configs/ciaraldi_sheet1.yaml` and `configs/ciaraldi_by_title.yaml`
-are left in this repo as real worked examples of a draft with its
-open questions written in.
+examples. `configs/example.yaml` is a generic, annotated template. Your
+own configs live alongside it in `configs/`, but are **gitignored** --
+each one is tied to a single spreadsheet's columns, so only the
+template is version-controlled.
 
 ## Running a migration
 

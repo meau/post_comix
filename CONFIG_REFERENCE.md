@@ -34,8 +34,8 @@ Any field with a `column:` key accepts either:
 - a **string** — looked up by header name (the sheet needs a header row)
 - an **integer** — a 0-based positional index (works on headerless
   sheets, or when several sheets share a config but don't use
-  *exactly* the same header text — see `configs/ciaraldi_by_title.yaml`
-  for a worked example)
+  *exactly* the same header text — see the commented positional-column
+  example in `configs/example.yaml`)
 
 `migrate.py` hard-errors before writing anything if a name-based
 column doesn't actually exist in a sheet it's asked to process,
