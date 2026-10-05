@@ -67,6 +67,9 @@ def main():
 
     for entry in pending:
         uri = entry["top_container_uri"]
+        if "DRY-RUN" in uri:
+            log(f"{uri}: fake URI from an earlier dry run -- dropping from the pending list.")
+            continue
         building = entry.get("building")
         coords = coordinates_from_jsonable(entry["coordinates"])
 

@@ -148,7 +148,7 @@ See [RECONCILIATION.md](RECONCILIATION.md) for the resolution logic
 box:
   column: "New Box Number"
   compound: false           # true for values like "163: Box 1" -- see below
-  barcode_column: null      # a SEPARATE column holding the container's barcode (only used when creating a new container)
+  barcode_column: null      # a SEPARATE column holding the container's barcode -- matched repository-wide first, see below
   container_type: box       # ArchivesSpace top_container type
   placeholder: false        # true bypasses the raw value entirely -- see below
 ```
@@ -190,8 +190,31 @@ box:
   barcode_column: "barcode"
 ```
 
-Only applied when a container is newly **created** — never
-overwrites the barcode on an already-existing, reused container.
+**How containers are matched — and the one barcode exception.**
+Top containers are normally **scoped to the resource you're migrating
+into**: box "5" in one resource is a different container from box "5"
+in another. The exception is barcode. When a row has a barcode (from
+`barcode_column`, or extracted from a compound box value), the script
+first looks for a top container with that exact barcode **anywhere in
+the repository** — any resource, or none — and if one exists, links
+and reuses it instead of creating a new one. A barcode identifies one
+physical container, so it wins over the resource-scoped matching.
+
+- If no container has that barcode, a new one is created (scoped to
+  this resource as usual, barcode set) — and any later resource that
+  uses the same barcode will reuse *that* one.
+- If the existing container's indicator or type doesn't match what the
+  spreadsheet says (e.g. the sheet says box "5" but barcode X is
+  already on box "12"), it's **still reused** — barcode wins — but a
+  warning is logged and attached to the row, since that usually means
+  a typo in the sheet.
+- Rows with no barcode behave exactly as before (resource-scoped).
+- Excel stores barcodes as numbers, so `31236094336081.0` is cleaned
+  to `31236094336081` before matching. Leading zeros can't be
+  recovered if Excel already dropped them — format barcode columns
+  as Text in the spreadsheet if yours have any.
+- A reused container's barcode and location are never modified; a
+  barcode is only ever written when a container is newly created.
 
 **Placeholder containers** (`placeholder: true`), for cases like
 "map case / drawer" that are locations, not discrete countable

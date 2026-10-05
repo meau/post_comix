@@ -3,7 +3,7 @@ generic_builders.py
 
 Config-driven versions of the archival_object field builders that
 were originally hardcoded to Peck Comics' column names in
-migrate_comics.py. Each function takes a raw row (as a tuple/list),
+migrate.py. Each function takes a raw row (as a tuple/list),
 the sheet's header_index (name -> position, or None for headerless
 sheets), and the relevant piece of a MappingConfig.
 
@@ -14,6 +14,7 @@ they just weren't previously reachable from arbitrary column names.
 
 import re
 
+from containers import normalize_barcode
 from date_parser import parse_date_cell
 from mapping import get_value
 
@@ -158,7 +159,10 @@ def get_box_barcode_from_column(row_values, header_index, box_cfg):
     """
     if not box_cfg or not box_cfg.get("barcode_column"):
         return None
-    return clean_str(get_value(row_values, header_index, box_cfg["barcode_column"]))
+    # normalize_barcode handles Excel's numeric cells (31236094336081.0 ->
+    # "31236094336081"); clean_str alone would keep the ".0" and the
+    # barcode would never match one already on record.
+    return normalize_barcode(get_value(row_values, header_index, box_cfg["barcode_column"]))
 
 
 def parse_box_value(raw, box_cfg):

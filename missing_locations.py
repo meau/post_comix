@@ -72,6 +72,10 @@ def write_pending_relink(pending: list, path: str):
         with open(path, "r", encoding="utf-8") as f:
             existing = json.load(f)
 
+    # Drop entries pointing at fake DRY-RUN-N containers (from an earlier
+    # dry run) -- they don't exist, so relinking them could only fail.
+    existing = [e for e in existing if "DRY-RUN" not in e["top_container_uri"]]
+    pending = [e for e in pending if "DRY-RUN" not in e["top_container_uri"]]
     seen = {(e["top_container_uri"]) for e in existing}
     for entry in pending:
         if entry["top_container_uri"] not in seen:

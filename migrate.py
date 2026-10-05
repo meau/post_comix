@@ -332,6 +332,15 @@ def main():
     state = RunState(args.state_file, log=log, dry_run=args.dry_run)
     agent_cache, genre_cache, digital_object_cache, location_cache = {}, {}, {}, {}
     container_cache = load_cache(args.container_cache_file)
+    stale = [k for k, v in container_cache.items() if "DRY-RUN" in str((v or {}).get("uri", ""))]
+    if stale:
+        for k in stale:
+            del container_cache[k]
+        log(f"Dropped {len(stale)} fake DRY-RUN entr{'y' if len(stale) == 1 else 'ies'} from "
+            f"{args.container_cache_file} (left behind by an earlier dry run -- they point at "
+            f"containers that don't exist).")
+        if not args.dry_run:
+            save_cache(args.container_cache_file, container_cache, log)
     if container_cache:
         log(f"Loaded {len(container_cache)} previously-created top container(s) from "
             f"{args.container_cache_file} -- these won't be recreated even if ArchivesSpace's "
@@ -428,7 +437,15 @@ def main():
                             barcode=barcode, container_type=container_type,
                             container_locations=container_locations_payload,
                         )
-                        if container_link and container_link["status"] == "created":
+                        if container_link and container_link.get("warning"):
+                            row_warnings.append(container_link["warning"])
+                        # Persist whenever the cache gained an entry (created, found by
+                        # the resource-scoped search, or matched by barcode) -- but never
+                        # during a dry run: those containers carry fake DRY-RUN-N URIs,
+                        # and persisting them would make a later REAL run "reuse"
+                        # containers that don't exist.
+                        if (container_link and container_link["status"] != "reused_this_run"
+                                and not args.dry_run):
                             save_cache(args.container_cache_file, container_cache, log)
                         if coords and not location_link:
                             title_guess = build_title(row_values, header_index, mapping.title)
@@ -483,7 +500,10 @@ def main():
         write_missing_locations_report(missing_locations, report_path)
         log(f"Missing locations report: {report_path} "
             f"({len(missing_locations)} distinct location(s) not found in ArchivesSpace)")
-    if pending_relink:
+    if pending_relink and args.dry_run:
+        log(f"[dry-run] Would queue {len(pending_relink)} top container(s) in "
+            f"{args.pending_relink_file} for relink_locations.py -- not written in a dry run.")
+    elif pending_relink:
         relink_path = args.pending_relink_file
         write_pending_relink(pending_relink, relink_path)
         log(f"Pending relink file: {relink_path} "

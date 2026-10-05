@@ -37,6 +37,18 @@ codes). A few were **not** independently confirmed the same way:
   found in ArchivesSpace's own schema docs/source the way the other
   enums were. Test a couple of real genre-term creates with a small
   batch before trusting this at the scale of a full run.
+- **Barcode matching** (`containers.py`) is repository-wide, and works
+  by searching the barcode text and then **verifying each candidate by
+  fetching its record** and comparing the barcode field exactly — so,
+  unlike the resource-scoped search below, it doesn't depend on a
+  guessed search-index field name. It can still miss if the index
+  hasn't caught up with a very recent create; in that case the create
+  is attempted, and a duplicate-barcode rejection triggers one more
+  lookup and a reuse rather than a failed row. That recovery assumes
+  ArchivesSpace rejects duplicate barcodes within a repository (my
+  understanding, not something verified against your instance) — if it
+  silently accepted them instead, a lagged search could create a
+  duplicate-barcode container. Worth confirming with a small real batch.
 - **Resource-scoped top-container search** (`containers.py`) relies
   on a search-index facet field (`collection_uri_u_sstr`) to confirm
   a candidate top container is already linked to the *specific*
